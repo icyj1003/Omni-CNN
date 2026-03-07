@@ -1,36 +1,24 @@
 from __future__ import print_function
 import os
-import sys
-
-import logging
 import argparse
 import time
-import yaml
 import copy
-from time import strftime
+import pickle
+
 import torch
 import torch.optim as optim
-from torchvision import datasets, transforms
-
-# torch.use_deterministic_algorithms(True)
-torch.backends.cudnn.deterministic = True
-# torch.set_deterministic(True)
-import models
-import admm
-from admm import GradualWarmupScheduler
-from admm import CrossEntropyLossMaybeSmooth
-from admm import mixup_data, mixup_criterion
-from testers import *
-from utils import *
-from new_TrainValTest import CVTrainValTest
-
+import numpy as np
 from torch.utils.tensorboard import SummaryWriter
+
+from testers import test_sparsity_mask
+from utils import model_loader, load_layer_config, mask_reverse
+from new_TrainValTest import CVTrainValTest
+from Server import federated_train
 
 # torch.use_deterministic_algorithms(True)
 torch.backends.cudnn.deterministic = True
 # torch.set_deterministic(True)
 np.set_printoptions(threshold=False)
-from Server import federated_train
 
 WRITER = SummaryWriter()
 
@@ -270,6 +258,7 @@ parser.add_argument(
 
 args = parser.parse_args()
 
+# device setting
 args.cuda = not args.no_cuda and torch.cuda.is_available()
 if args.cuda:
     torch.cuda.manual_seed(args.seed)
@@ -278,6 +267,7 @@ use_cuda = not args.no_cuda and torch.cuda.is_available()
 device = torch.device("cuda:0" if use_cuda else "cpu")
 kwargs = {"num_workers": args.workers, "pin_memory": True} if args.cuda else {}
 print("Using CUDA: {}".format(use_cuda))
+
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 # Save path
 args.save_path_exp = os.path.join(args.save_path, args.exp_name)
@@ -386,7 +376,7 @@ def train_common_model(args, pipeline, train_common_loader, test_common_loader):
             [0, 1, 2],
         )
         end_test = time.time()
-        WRITER.add_scalar(f"val/acc_task_lidar_img_gps", prec1, epoch)
+        WRITER.add_scalar("val/acc_task_lidar_img_gps", prec1, epoch)
         _prec1 = pipeline.validate_model(
             args,
             lidar_model,
@@ -396,7 +386,7 @@ def train_common_model(args, pipeline, train_common_loader, test_common_loader):
             test_common_loader,
             [0, 1],
         )
-        WRITER.add_scalar(f"val/acc_task_lidar_img", _prec1, epoch)
+        WRITER.add_scalar("val/acc_task_lidar_img", _prec1, epoch)
         _prec1 = pipeline.validate_model(
             args,
             lidar_model,
@@ -406,7 +396,7 @@ def train_common_model(args, pipeline, train_common_loader, test_common_loader):
             test_common_loader,
             [0, 2],
         )
-        WRITER.add_scalar(f"val/acc_task_lidar_gps", _prec1, epoch)
+        WRITER.add_scalar("val/acc_task_lidar_gps", _prec1, epoch)
         _prec1 = pipeline.validate_model(
             args,
             lidar_model,
@@ -416,7 +406,7 @@ def train_common_model(args, pipeline, train_common_loader, test_common_loader):
             test_common_loader,
             [1, 2],
         )
-        WRITER.add_scalar(f"val/acc_task_img_gps", _prec1, epoch)
+        WRITER.add_scalar("val/acc_task_img_gps", _prec1, epoch)
         _prec1 = pipeline.validate_model(
             args,
             lidar_model,
@@ -426,7 +416,7 @@ def train_common_model(args, pipeline, train_common_loader, test_common_loader):
             test_common_loader,
             [0],
         )
-        WRITER.add_scalar(f"val/acc_task_lidar", _prec1, epoch)
+        WRITER.add_scalar("val/acc_task_lidar", _prec1, epoch)
         _prec1 = pipeline.validate_model(
             args,
             lidar_model,
@@ -436,7 +426,7 @@ def train_common_model(args, pipeline, train_common_loader, test_common_loader):
             test_common_loader,
             [1],
         )
-        WRITER.add_scalar(f"val/acc_task_img", _prec1, epoch)
+        WRITER.add_scalar("val/acc_task_img", _prec1, epoch)
         _prec1 = pipeline.validate_model(
             args,
             lidar_model,
@@ -446,7 +436,7 @@ def train_common_model(args, pipeline, train_common_loader, test_common_loader):
             test_common_loader,
             [2],
         )
-        WRITER.add_scalar(f"val/acc_task_gps", _prec1, epoch)
+        WRITER.add_scalar("val/acc_task_gps", _prec1, epoch)
         print(
             "Training time: {:.3f}; Testing time: {:.3f}.".format(
                 end_train - start, end_test - end_train
@@ -516,7 +506,8 @@ if __name__ == "__main__":
     base_path = os.path.join(args.base_path, "task" + str(3))
     save_path = os.path.join(args.save_path_exp, "task" + str(3))
     check_and_create(save_path)
-    # Todo : add common data
+
+    # add common data
     base_common_path = os.path.join(args.base_path, "task_common")
     save_common_path = os.path.join(args.save_path_exp, "task_common")
     check_and_create(save_common_path)
@@ -554,13 +545,19 @@ if __name__ == "__main__":
     if not args.load_cummu_model:
         raise Exception("No model to load")
 
-    # Loading mask for each task from the previous task
+    # Loading mask for each task from the previous task:
+    # LIG -> Load mask L, mask I, mask G is loaded from cummu mask of the previous task
+    # load lidar mask
     lidar_save_path = os.path.join(args.save_path_exp, "task" + str(0))
     lidar_mask = pickle.load(open(lidar_save_path + "/mask.pkl", "rb"))
     test_sparsity_mask(args, lidar_mask)
+
+    # load image mask
     img_save_path = os.path.join(args.save_path_exp, "task" + str(1))
     img_mask = pickle.load(open(img_save_path + "/mask.pkl", "rb"))
     test_sparsity_mask(args, img_mask)
+
+    # load gps mask
     prev_cummu_mask = pickle.load(open(img_save_path + "/cumu_mask.pkl", "rb"))
     gps_mask = mask_reverse(args, prev_cummu_mask)
 

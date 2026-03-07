@@ -5,3 +5,4 @@ flash_GPS_Image_LiDAR/*
 runs/*
 results/*
 env
+*__pycache__/*

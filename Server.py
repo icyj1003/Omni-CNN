@@ -109,7 +109,7 @@ def federated_train(
     gps_mask,
     WRITER,
 ):
-    history = []
+
     equipment_list = [
         ["lidar", "img", "gps"],
         ["lidar"],
@@ -127,7 +127,6 @@ def federated_train(
     lidar_total_size = 0
     img_total_size = 0
     gps_total_size = 0
-    best_acc = 0
     for i in args.clients:
         random_key = equipment_list[int(i)]
         print("Client {} has {}".format(i, random_key))
@@ -233,62 +232,75 @@ def federated_train(
                 i + 1,
             )
             top1.update(prec1, 1)
-            client.update_delta_acc(prec1 - infer_prec1)
+
+            delta_acc = prec1 - infer_prec1
+            WRITER.add_scalar(
+                "Client_"
+                + str(client.client_id)
+                + "/Delta_Acc_"
+                + "_".join(client.equipment),
+                delta_acc,
+                i + 1,
+            )
+
+            client.update_delta_acc(delta_acc)
             for name, param in client.model_common.state_dict().items():
-                model_common_new_params[name] += param * sigmoid_with_zero_handling(
-                    _common_mask[name].cuda() * client.get_delta_acc()
-                )
-                cummulative_common_mask[name] += sigmoid_with_zero_handling(
-                    _common_mask[name].cuda() * client.get_delta_acc()
-                )
-                # model_common_new_params[name] += param * (
-                #     _common_mask[name].cuda() * client.get_train_size()
+                # model_common_new_params[name] += param * sigmoid_with_zero_handling(
+                #     _common_mask[name].cuda() * client.get_delta_acc()
                 # )
-                # cummulative_common_mask[name] += (
-                #     _common_mask[name].cuda() * client.get_train_size()
+                # cummulative_common_mask[name] += sigmoid_with_zero_handling(
+                #     _common_mask[name].cuda() * client.get_delta_acc()
                 # )
+                model_common_new_params[name] += param * (
+                    _common_mask[name].cuda() * client.get_train_size()
+                )
+                cummulative_common_mask[name] += (
+                    _common_mask[name].cuda() * client.get_train_size()
+                )
             if _lidar_mask is not None:
                 for name, param in client.lidar_model.state_dict().items():
-                    lidar_model_new_params[name] += param * sigmoid_with_zero_handling(
-                        _lidar_mask[name].cuda() * client.get_delta_acc()
-                    )
-                    cummulative_lidar_mask[name] += sigmoid_with_zero_handling(
-                        _lidar_mask[name].cuda() * client.get_delta_acc()
-                    )
-                    # lidar_model_new_params[name] += param * (
-                    #     _lidar_mask[name].cuda() * client.get_train_size()
+                    # lidar_model_new_params[name] += param * sigmoid_with_zero_handling(
+                    #     _lidar_mask[name].cuda() * client.get_delta_acc()
                     # )
-                    # cummulative_lidar_mask[name] += (
-                    #     _lidar_mask[name].cuda() * client.get_train_size()
+                    # cummulative_lidar_mask[name] += sigmoid_with_zero_handling(
+                    #     _lidar_mask[name].cuda() * client.get_delta_acc()
                     # )
+                    lidar_model_new_params[name] += param * (
+                        _lidar_mask[name].cuda() * client.get_train_size()
+                    )
+                    cummulative_lidar_mask[name] += (
+                        _lidar_mask[name].cuda() * client.get_train_size()
+                    )
             if _img_mask is not None:
                 for name, param in client.img_model.state_dict().items():
-                    img_model_new_params[name] += param * sigmoid_with_zero_handling(
-                        _img_mask[name].cuda() * client.get_delta_acc()
-                    )
-                    cummulative_img_mask[name] += sigmoid_with_zero_handling(
-                        _img_mask[name].cuda() * client.get_delta_acc()
-                    )
-                    # img_model_new_params[name] += param * (
-                    #     _img_mask[name].cuda() * client.get_train_size()
+                    # img_model_new_params[name] += param * sigmoid_with_zero_handling(
+                    #     _img_mask[name].cuda() * client.get_delta_acc()
                     # )
-                    # cummulative_img_mask[name] += (
-                    #     _img_mask[name].cuda() * client.get_train_size()
+                    # cummulative_img_mask[name] += sigmoid_with_zero_handling(
+                    #     _img_mask[name].cuda() * client.get_delta_acc()
                     # )
+                    img_model_new_params[name] += param * (
+                        _img_mask[name].cuda() * client.get_train_size()
+                    )
+                    cummulative_img_mask[name] += (
+                        _img_mask[name].cuda() * client.get_train_size()
+                    )
             if _gps_mask is not None:
                 for name, param in client.gps_model.state_dict().items():
-                    gps_model_new_params[name] += param * sigmoid_with_zero_handling(
-                        _gps_mask[name].cuda() * client.get_delta_acc()
-                    )
-                    cummulative_gps_mask[name] += sigmoid_with_zero_handling(
-                        _gps_mask[name].cuda() * client.get_delta_acc()
-                    )
-                    # gps_model_new_params[name] += param * (
-                    #     _gps_mask[name].cuda() * client.get_train_size()
+                    # gps_model_new_params[name] += param * sigmoid_with_zero_handling(
+                    #     _gps_mask[name].cuda() * client.get_delta_acc()
                     # )
-                    # cummulative_gps_mask[name] += (
-                    #     _gps_mask[name].cuda() * client.get_train_size()
+                    # cummulative_gps_mask[name] += sigmoid_with_zero_handling(
+                    #     _gps_mask[name].cuda() * client.get_delta_acc()
                     # )
+                    gps_model_new_params[name] += param * (
+                        _gps_mask[name].cuda() * client.get_train_size()
+                    )
+                    cummulative_gps_mask[name] += (
+                        _gps_mask[name].cuda() * client.get_train_size()
+                    )
+
+            # client log here
 
         print("Round {} : Average Accuracy: {}".format(i + 1, top1.avg))
 
