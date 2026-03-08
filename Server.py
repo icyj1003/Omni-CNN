@@ -161,6 +161,7 @@ def federated_train(
     for i in tqdm(range(args.comms_round)):
         top1 = AverageMeter()
         print("Start Round {} ...".format(i + 1))
+        top1_infer = AverageMeter()
         model_common_curr_params = copy.deepcopy(model_common.state_dict())
         lidar_model_curr_params = copy.deepcopy(lidar_model.state_dict())
         img_model_curr_params = copy.deepcopy(img_model.state_dict())
@@ -198,6 +199,7 @@ def federated_train(
             )
             print("Client {} is inferencing...".format(client.client_id))
             infer_prec1 = client.model_testing_on_local_data()
+            top1_infer.update(infer_prec1, 1)
             WRITER.add_scalar(
                 "Client_"
                 + str(client.client_id)
@@ -221,7 +223,9 @@ def federated_train(
             print(
                 f"Checking mask... common_mask: {_common_mask is not None}, lidar_mask: {_lidar_mask is not None}, img_mask: {_img_mask is not None}, gps_mask: {_gps_mask is not None}"
             )
+
             client.client_local_training(5)
+
             prec1 = client.model_testing_on_local_data()
             WRITER.add_scalar(
                 "Client_"
@@ -245,12 +249,11 @@ def federated_train(
 
             client.update_delta_acc(delta_acc)
             for name, param in client.model_common.state_dict().items():
-                # model_common_new_params[name] += param * sigmoid_with_zero_handling(
+                # sigmoid_coeff = sigmoid_with_zero_handling(
                 #     _common_mask[name].cuda() * client.get_delta_acc()
                 # )
-                # cummulative_common_mask[name] += sigmoid_with_zero_handling(
-                #     _common_mask[name].cuda() * client.get_delta_acc()
-                # )
+                # model_common_new_params[name] += param * sigmoid_coeff
+                # cummulative_common_mask[name] += sigmoid_coeff
                 model_common_new_params[name] += param * (
                     _common_mask[name].cuda() * client.get_train_size()
                 )
@@ -259,12 +262,11 @@ def federated_train(
                 )
             if _lidar_mask is not None:
                 for name, param in client.lidar_model.state_dict().items():
-                    # lidar_model_new_params[name] += param * sigmoid_with_zero_handling(
+                    # sigmoid_coeff = sigmoid_with_zero_handling(
                     #     _lidar_mask[name].cuda() * client.get_delta_acc()
                     # )
-                    # cummulative_lidar_mask[name] += sigmoid_with_zero_handling(
-                    #     _lidar_mask[name].cuda() * client.get_delta_acc()
-                    # )
+                    # lidar_model_new_params[name] += param * sigmoid_coeff
+                    # cummulative_lidar_mask[name] += sigmoid_coeff
                     lidar_model_new_params[name] += param * (
                         _lidar_mask[name].cuda() * client.get_train_size()
                     )
@@ -273,12 +275,11 @@ def federated_train(
                     )
             if _img_mask is not None:
                 for name, param in client.img_model.state_dict().items():
-                    # img_model_new_params[name] += param * sigmoid_with_zero_handling(
+                    # sigmoid_coeff = sigmoid_with_zero_handling(
                     #     _img_mask[name].cuda() * client.get_delta_acc()
                     # )
-                    # cummulative_img_mask[name] += sigmoid_with_zero_handling(
-                    #     _img_mask[name].cuda() * client.get_delta_acc()
-                    # )
+                    # img_model_new_params[name] += param * sigmoid_coeff
+                    # cummulative_img_mask[name] += sigmoid_coeff
                     img_model_new_params[name] += param * (
                         _img_mask[name].cuda() * client.get_train_size()
                     )
@@ -287,12 +288,11 @@ def federated_train(
                     )
             if _gps_mask is not None:
                 for name, param in client.gps_model.state_dict().items():
-                    # gps_model_new_params[name] += param * sigmoid_with_zero_handling(
-                    #     _gps_mask[name].cuda() * client.get_delta_acc()
+                    # sigmoid_coeff = sigmoid_with_zero_handling(
+                    #     _gps_mask[name].cuda() * client.get_delta_acc(),
                     # )
-                    # cummulative_gps_mask[name] += sigmoid_with_zero_handling(
-                    #     _gps_mask[name].cuda() * client.get_delta_acc()
-                    # )
+                    # gps_model_new_params[name] += param * sigmoid_coeff
+                    # cummulative_gps_mask[name] += sigmoid_coeff
                     gps_model_new_params[name] += param * (
                         _gps_mask[name].cuda() * client.get_train_size()
                     )
@@ -303,6 +303,11 @@ def federated_train(
             # client log here
 
         print("Round {} : Average Accuracy: {}".format(i + 1, top1.avg))
+        print("Round {} : Average Inference Accuracy: {}".format(i + 1, top1_infer.avg))
+
+        # log to tensorboard
+        WRITER.add_scalar("AverageAccuracy", top1.avg, i + 1)
+        WRITER.add_scalar("AverageInferenceAccuracy", top1_infer.avg, i + 1)
 
         # aggregate global model parameters
         for name, param in model_common_new_params.items():
@@ -319,7 +324,7 @@ def federated_train(
                 else:
                     print("not updating lidar model")
                     lidar_model_new_params[name] = lidar_model_curr_params[name]
-            except:
+            except Exception:
                 print(f"Checking lidar model param: {param} so not updating")
                 lidar_model_new_params[name] = lidar_model_curr_params[name]
         for name, param in img_model_new_params.items():
@@ -332,7 +337,7 @@ def federated_train(
                 else:
                     print("not updating img model")
                     img_model_new_params[name] = img_model_curr_params[name]
-            except:
+            except Exception:
                 print(f"Checking img model param: {param} so not updating")
                 img_model_new_params[name] = img_model_curr_params[name]
         for name, param in gps_model_new_params.items():
@@ -345,7 +350,7 @@ def federated_train(
                 else:
                     print("not updating gps model")
                     gps_model_new_params[name] = gps_model_curr_params[name]
-            except:
+            except Exception:
                 print(f"Checking gps model param: {param} so not updating")
                 gps_model_new_params[name] = gps_model_curr_params[name]
 

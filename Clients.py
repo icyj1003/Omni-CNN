@@ -427,7 +427,7 @@ class Client_pipeline:
                             self.__previous_common_mask[name].type(torch.bool)
                         ]
                     )
-        except:
+        except Exception:
             print("Model common not found")
             self.model_common.load_state_dict(model_common_params)
 
@@ -446,7 +446,7 @@ class Client_pipeline:
                                     self.__previous_lidar_mask[name].type(torch.bool)
                                 ]
                             )
-            except:
+            except Exception:
                 print("Lidar model not found")
                 self.lidar_model.load_state_dict(lidar_params)
         if "img" in self.equipment:
@@ -464,7 +464,7 @@ class Client_pipeline:
                                     self.__previous_img_mask[name].type(torch.bool)
                                 ]
                             )
-            except:
+            except Exception:
                 print("Img model not found")
                 self.img_model.load_state_dict(img_params)
         if "gps" in self.equipment:
@@ -482,7 +482,7 @@ class Client_pipeline:
                                     self.__previous_gps_mask[name].type(torch.bool)
                                 ]
                             )
-            except:
+            except Exception:
                 print("GPS model not found")
                 self.gps_model.load_state_dict(gps_params)
 

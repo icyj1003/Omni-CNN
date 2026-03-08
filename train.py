@@ -666,94 +666,94 @@ if __name__ == "__main__":
     """
     Loading common model and individual retrained models
     """
-    model_common = model_loader(
-        args, 0, common=True
-    )  # if args.adaptive_mask import from masknet otherwise models/flash_net
-    model_common.cuda()
-    print(model_common)
-    common_save_path = os.path.join(args.save_path_exp, "task_common")
-    model_common.load_state_dict(
-        torch.load("experiments/LIG_S1/flash/Client_0/model_common.pt")
-    )
+    # model_common = model_loader(
+    #     args, 0, common=True
+    # )  # if args.adaptive_mask import from masknet otherwise models/flash_net
+    # model_common.cuda()
+    # print(model_common)
+    # common_save_path = os.path.join(args.save_path_exp, "task_common")
+    # model_common.load_state_dict(
+    #     torch.load("experiments/LIG_S1/flash/Client_0/model_common.pt")
+    # )
 
-    ## Start loading individual retrained models
-    lidar_save_path = os.path.join(args.save_path_exp, "task" + str(0))
-    lidar_model.load_state_dict(
-        torch.load("experiments/LIG_S1/flash/Client_0/lidar_model.pt")
-    )
-    img_save_path = os.path.join(args.save_path_exp, "task" + str(1))
-    img_model.load_state_dict(
-        torch.load("experiments/LIG_S1/flash/Client_0/img_model.pt")
-    )
-    gps_save_path = os.path.join(args.save_path_exp, "task" + str(2))
-    gps_model.load_state_dict(
-        torch.load("experiments/LIG_S1/flash/Client_0/gps_model.pt")
-    )
+    # ## Start loading individual retrained models
+    # lidar_save_path = os.path.join(args.save_path_exp, "task" + str(0))
+    # lidar_model.load_state_dict(
+    #     torch.load("experiments/LIG_S1/flash/Client_0/lidar_model.pt")
+    # )
+    # img_save_path = os.path.join(args.save_path_exp, "task" + str(1))
+    # img_model.load_state_dict(
+    #     torch.load("experiments/LIG_S1/flash/Client_0/img_model.pt")
+    # )
+    # gps_save_path = os.path.join(args.save_path_exp, "task" + str(2))
+    # gps_model.load_state_dict(
+    #     torch.load("experiments/LIG_S1/flash/Client_0/gps_model.pt")
+    # )
 
-    """
-    Testing the common model
-    """
-    common_prec1 = pipeline.validate_model(
-        args,
-        lidar_model,
-        img_model,
-        gps_model,
-        model_common,
-        test_common_loader,
-        [0, 1, 2],
-    )
+    # """
+    # Testing the common model
+    # """
+    # common_prec1 = pipeline.validate_model(
+    #     args,
+    #     lidar_model,
+    #     img_model,
+    #     gps_model,
+    #     model_common,
+    #     test_common_loader,
+    #     [0, 1, 2],
+    # )
 
-    _prec1 = pipeline.validate_model(
-        args,
-        lidar_model,
-        img_model,
-        gps_model,
-        model_common,
-        test_common_loader,
-        [0, 1],
-    )
-    _prec1 = pipeline.validate_model(
-        args,
-        lidar_model,
-        img_model,
-        gps_model,
-        model_common,
-        test_common_loader,
-        [0, 2],
-    )
-    _prec1 = pipeline.validate_model(
-        args,
-        lidar_model,
-        img_model,
-        gps_model,
-        model_common,
-        test_common_loader,
-        [1, 2],
-    )
-    _prec1 = pipeline.validate_model(
-        args,
-        lidar_model,
-        img_model,
-        gps_model,
-        model_common,
-        test_common_loader,
-        [0],
-    )
-    _prec1 = pipeline.validate_model(
-        args,
-        lidar_model,
-        img_model,
-        gps_model,
-        model_common,
-        test_common_loader,
-        [1],
-    )
-    _prec1 = pipeline.validate_model(
-        args,
-        lidar_model,
-        img_model,
-        gps_model,
-        model_common,
-        test_common_loader,
-        [2],
-    )
+    # _prec1 = pipeline.validate_model(
+    #     args,
+    #     lidar_model,
+    #     img_model,
+    #     gps_model,
+    #     model_common,
+    #     test_common_loader,
+    #     [0, 1],
+    # )
+    # _prec1 = pipeline.validate_model(
+    #     args,
+    #     lidar_model,
+    #     img_model,
+    #     gps_model,
+    #     model_common,
+    #     test_common_loader,
+    #     [0, 2],
+    # )
+    # _prec1 = pipeline.validate_model(
+    #     args,
+    #     lidar_model,
+    #     img_model,
+    #     gps_model,
+    #     model_common,
+    #     test_common_loader,
+    #     [1, 2],
+    # )
+    # _prec1 = pipeline.validate_model(
+    #     args,
+    #     lidar_model,
+    #     img_model,
+    #     gps_model,
+    #     model_common,
+    #     test_common_loader,
+    #     [0],
+    # )
+    # _prec1 = pipeline.validate_model(
+    #     args,
+    #     lidar_model,
+    #     img_model,
+    #     gps_model,
+    #     model_common,
+    #     test_common_loader,
+    #     [1],
+    # )
+    # _prec1 = pipeline.validate_model(
+    #     args,
+    #     lidar_model,
+    #     img_model,
+    #     gps_model,
+    #     model_common,
+    #     test_common_loader,
+    #     [2],
+    # )
