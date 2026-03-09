@@ -46,6 +46,12 @@ parser.add_argument(
     "--logger", action="store_true", default=True, help="whether to use logger"
 )
 parser.add_argument(
+    "--use_tfed",
+    action="store_true",
+    default=False,
+    help="use tfed or not",
+)
+parser.add_argument(
     "--arch", type=str, default=None, help="[vgg, resnet, convnet, alexnet]"
 )
 parser.add_argument(

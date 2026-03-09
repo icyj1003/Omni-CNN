@@ -40,6 +40,14 @@ def sigmoid_with_zero_handling(tensor):
     return sigmoid_result
 
 
+def count_nonzero_parameters(model):
+    return sum(torch.count_nonzero(param).item() for param in model.parameters())
+
+
+def count_nonzero_mask(mask):
+    return sum([v.sum().item() for v in mask.values()])
+
+
 def safe_elementwise_division(tensor1, tensor2):
     """
     Performs element-wise division of two tensors with zero elements in the denominator
@@ -122,11 +130,13 @@ def federated_train(
         ["lidar", "img"],
         ["lidar", "gps"],
     ]
+    size_limits = [x * 1e6 for x in [3.4, 2.2, 2.5, 2.0, 3.1, 2.6, 2.9, 2.4, 2.1, 1.9]]
     list_of_clients = []
     common_total_size = 0
     lidar_total_size = 0
     img_total_size = 0
     gps_total_size = 0
+
     for i in args.clients:
         random_key = equipment_list[int(i)]
         print("Client {} has {}".format(i, random_key))
@@ -147,6 +157,7 @@ def federated_train(
             img_total_size += train_size
         if "gps" in random_key:
             gps_total_size += train_size
+
         client_pipeline.load_model(
             model_common,
             lidar_model,
@@ -155,7 +166,9 @@ def federated_train(
             img_mask,
             gps_model,
             gps_mask,
+            size_limits[int(i)],
         )
+
         client_pipeline.configure_optimizer()
         list_of_clients.append(client_pipeline)
     for i in tqdm(range(args.comms_round)):
@@ -212,14 +225,38 @@ def federated_train(
                 client.update_previous_accuracy(infer_prec1)
             if evaluate_accuracy(args, client, infer_prec1):
                 client.set_transfer_learning()
+                WRITER.add_scalar(
+                    "Client_"
+                    + str(client.client_id)
+                    + "/overhead_"
+                    + "_".join(client.equipment),
+                    client.transfer_overhead / 8 / (1024**2),
+                )
                 print("Client {} is transferring...".format(client.client_id))
             else:
                 client.set_relearning()
+                WRITER.add_scalar(
+                    "Client_"
+                    + str(client.client_id)
+                    + "/overhead_"
+                    + "_".join(client.equipment),
+                    client.overhead / 8 / (1024**2),
+                )
                 print("Client {} is retraining...".format(client.client_id))
+
+            WRITER.add_scalar(
+                "Client_"
+                + str(client.client_id)
+                + "/Is_Transfer_Learning_"
+                + "_".join(client.equipment),
+                evaluate_accuracy(args, client, infer_prec1),
+                i + 1,
+            )
             _common_mask = client.get_mask("common")
             _lidar_mask = client.get_mask("lidar")
             _img_mask = client.get_mask("img")
             _gps_mask = client.get_mask("gps")
+
             print(
                 f"Checking mask... common_mask: {_common_mask is not None}, lidar_mask: {_lidar_mask is not None}, img_mask: {_img_mask is not None}, gps_mask: {_gps_mask is not None}"
             )
