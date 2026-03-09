@@ -17,7 +17,7 @@
                 "--base_path",
                 "flash_GPS_Image_LiDAR",
                 "--save_path",
-                "experiments/khoiDebug",
+                "experiments/LIG_S1",
                 "--load-cummu-model",
                 "centralized/LIG_S1/flash/task2/cumu_model.pt",
                 "--classes",

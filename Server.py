@@ -40,6 +40,14 @@ def sigmoid_with_zero_handling(tensor):
     return sigmoid_result
 
 
+def count_nonzero_parameters(model):
+    return sum(torch.count_nonzero(param).item() for param in model.parameters())
+
+
+def count_nonzero_mask(mask):
+    return sum([v.sum().item() for v in mask.values()])
+
+
 def safe_elementwise_division(tensor1, tensor2):
     """
     Performs element-wise division of two tensors with zero elements in the denominator
@@ -122,11 +130,16 @@ def federated_train(
         ["lidar", "img"],
         ["lidar", "gps"],
     ]
+    size_limits = [
+        x * 1e6 if args.use_tfed else 1e8
+        for x in [3.4, 2.2, 2.5, 2.0, 3.1, 2.6, 2.9, 2.4, 2.1, 1.9]
+    ]
     list_of_clients = []
     common_total_size = 0
     lidar_total_size = 0
     img_total_size = 0
     gps_total_size = 0
+
     for i in args.clients:
         random_key = equipment_list[int(i)]
         print("Client {} has {}".format(i, random_key))
@@ -147,6 +160,7 @@ def federated_train(
             img_total_size += train_size
         if "gps" in random_key:
             gps_total_size += train_size
+
         client_pipeline.load_model(
             model_common,
             lidar_model,
@@ -155,7 +169,9 @@ def federated_train(
             img_mask,
             gps_model,
             gps_mask,
+            size_limits[int(i)],
         )
+
         client_pipeline.configure_optimizer()
         list_of_clients.append(client_pipeline)
     for i in tqdm(range(args.comms_round)):
@@ -190,6 +206,13 @@ def federated_train(
         cummulative_gps_mask = dict(
             [(name, 0) for name, param in gps_model_curr_params.items()]
         )
+
+        # AvgFed counters (used only when args.use_tfed == False)
+        common_client_count = 0
+        lidar_client_count = 0
+        img_client_count = 0
+        gps_client_count = 0
+
         for client in list_of_clients:
             client.update_model(
                 model_common_curr_params,
@@ -212,14 +235,50 @@ def federated_train(
                 client.update_previous_accuracy(infer_prec1)
             if evaluate_accuracy(args, client, infer_prec1):
                 client.set_transfer_learning()
+                overhead = client.transfer_overhead
                 print("Client {} is transferring...".format(client.client_id))
             else:
                 client.set_relearning()
+                overhead = client.overhead
                 print("Client {} is retraining...".format(client.client_id))
+
+            WRITER.add_scalar(
+                "Client_"
+                + str(client.client_id)
+                + "/Is_Transfer_Learning_"
+                + "_".join(client.equipment),
+                evaluate_accuracy(args, client, infer_prec1),
+                i + 1,
+            )
+            WRITER.add_scalar(
+                "Client_"
+                + str(client.client_id)
+                + "/Overhead_weight_"
+                + "_".join(client.equipment),
+                overhead[1],
+                i + 1,
+            )
+            WRITER.add_scalar(
+                "Client_"
+                + str(client.client_id)
+                + "/Overhead_mask_"
+                + "_".join(client.equipment),
+                overhead[2],
+                i + 1,
+            )
+            WRITER.add_scalar(
+                "Client_"
+                + str(client.client_id)
+                + "/Overhead_total_"
+                + "_".join(client.equipment),
+                sum(overhead),
+                i + 1,
+            )
             _common_mask = client.get_mask("common")
             _lidar_mask = client.get_mask("lidar")
             _img_mask = client.get_mask("img")
             _gps_mask = client.get_mask("gps")
+
             print(
                 f"Checking mask... common_mask: {_common_mask is not None}, lidar_mask: {_lidar_mask is not None}, img_mask: {_img_mask is not None}, gps_mask: {_gps_mask is not None}"
             )
@@ -248,57 +307,62 @@ def federated_train(
             )
 
             client.update_delta_acc(delta_acc)
+
             for name, param in client.model_common.state_dict().items():
-                # sigmoid_coeff = sigmoid_with_zero_handling(
-                #     _common_mask[name].cuda() * client.get_delta_acc()
-                # )
-                # model_common_new_params[name] += param * sigmoid_coeff
-                # cummulative_common_mask[name] += sigmoid_coeff
-                model_common_new_params[name] += param * (
-                    _common_mask[name].cuda() * client.get_train_size()
-                )
-                cummulative_common_mask[name] += (
-                    _common_mask[name].cuda() * client.get_train_size()
-                )
+                if args.use_tfed:
+                    model_common_new_params[name] += param * (
+                        _common_mask[name].cuda() * client.get_train_size()
+                    )
+                    cummulative_common_mask[name] += (
+                        _common_mask[name].cuda() * client.get_train_size()
+                    )
+                else:
+                    # plain average (equal weight per client)
+                    if name == next(iter(client.model_common.state_dict().keys())):
+                        common_client_count += 1
+                    model_common_new_params[name] += param
+
             if _lidar_mask is not None:
                 for name, param in client.lidar_model.state_dict().items():
-                    # sigmoid_coeff = sigmoid_with_zero_handling(
-                    #     _lidar_mask[name].cuda() * client.get_delta_acc()
-                    # )
-                    # lidar_model_new_params[name] += param * sigmoid_coeff
-                    # cummulative_lidar_mask[name] += sigmoid_coeff
-                    lidar_model_new_params[name] += param * (
-                        _lidar_mask[name].cuda() * client.get_train_size()
-                    )
-                    cummulative_lidar_mask[name] += (
-                        _lidar_mask[name].cuda() * client.get_train_size()
-                    )
+                    if args.use_tfed:
+                        lidar_model_new_params[name] += param * (
+                            _lidar_mask[name].cuda() * client.get_train_size()
+                        )
+                        cummulative_lidar_mask[name] += (
+                            _lidar_mask[name].cuda() * client.get_train_size()
+                        )
+                    else:
+                        if name == next(iter(client.lidar_model.state_dict().keys())):
+                            lidar_client_count += 1
+                        lidar_model_new_params[name] += param
+
             if _img_mask is not None:
                 for name, param in client.img_model.state_dict().items():
-                    # sigmoid_coeff = sigmoid_with_zero_handling(
-                    #     _img_mask[name].cuda() * client.get_delta_acc()
-                    # )
-                    # img_model_new_params[name] += param * sigmoid_coeff
-                    # cummulative_img_mask[name] += sigmoid_coeff
-                    img_model_new_params[name] += param * (
-                        _img_mask[name].cuda() * client.get_train_size()
-                    )
-                    cummulative_img_mask[name] += (
-                        _img_mask[name].cuda() * client.get_train_size()
-                    )
+                    if args.use_tfed:
+                        img_model_new_params[name] += param * (
+                            _img_mask[name].cuda() * client.get_train_size()
+                        )
+                        cummulative_img_mask[name] += (
+                            _img_mask[name].cuda() * client.get_train_size()
+                        )
+                    else:
+                        if name == next(iter(client.img_model.state_dict().keys())):
+                            img_client_count += 1
+                        img_model_new_params[name] += param
+
             if _gps_mask is not None:
                 for name, param in client.gps_model.state_dict().items():
-                    # sigmoid_coeff = sigmoid_with_zero_handling(
-                    #     _gps_mask[name].cuda() * client.get_delta_acc(),
-                    # )
-                    # gps_model_new_params[name] += param * sigmoid_coeff
-                    # cummulative_gps_mask[name] += sigmoid_coeff
-                    gps_model_new_params[name] += param * (
-                        _gps_mask[name].cuda() * client.get_train_size()
-                    )
-                    cummulative_gps_mask[name] += (
-                        _gps_mask[name].cuda() * client.get_train_size()
-                    )
+                    if args.use_tfed:
+                        gps_model_new_params[name] += param * (
+                            _gps_mask[name].cuda() * client.get_train_size()
+                        )
+                        cummulative_gps_mask[name] += (
+                            _gps_mask[name].cuda() * client.get_train_size()
+                        )
+                    else:
+                        if name == next(iter(client.gps_model.state_dict().keys())):
+                            gps_client_count += 1
+                        gps_model_new_params[name] += param
 
             # client log here
 
@@ -309,50 +373,81 @@ def federated_train(
         WRITER.add_scalar("AverageAccuracy", top1.avg, i + 1)
         WRITER.add_scalar("AverageInferenceAccuracy", top1_infer.avg, i + 1)
 
-        # aggregate global model parameters
-        for name, param in model_common_new_params.items():
-            model_common_new_params[name] = safe_elementwise_division(
-                param, cummulative_common_mask[name]
-            )
-        for name, param in lidar_model_new_params.items():
-            try:
-                if torch.sum(param) != 0:
-                    print("updating lidar model")
-                    lidar_model_new_params[name] = safe_elementwise_division(
-                        param, cummulative_lidar_mask[name]
-                    )
-                else:
-                    print("not updating lidar model")
+        if args.use_tfed:
+            # aggregate global model parameters
+            for name, param in model_common_new_params.items():
+                model_common_new_params[name] = safe_elementwise_division(
+                    param, cummulative_common_mask[name]
+                )
+            for name, param in lidar_model_new_params.items():
+                try:
+                    if torch.sum(param) != 0:
+                        print("updating lidar model")
+                        lidar_model_new_params[name] = safe_elementwise_division(
+                            param, cummulative_lidar_mask[name]
+                        )
+                    else:
+                        print("not updating lidar model")
+                        lidar_model_new_params[name] = lidar_model_curr_params[name]
+                except Exception:
+                    print(f"Checking lidar model param: {param} so not updating")
                     lidar_model_new_params[name] = lidar_model_curr_params[name]
-            except Exception:
-                print(f"Checking lidar model param: {param} so not updating")
-                lidar_model_new_params[name] = lidar_model_curr_params[name]
-        for name, param in img_model_new_params.items():
-            try:
-                if torch.sum(param) != 0:
-                    print("updating img model")
-                    img_model_new_params[name] = safe_elementwise_division(
-                        param, cummulative_img_mask[name]
-                    )
-                else:
-                    print("not updating img model")
+            for name, param in img_model_new_params.items():
+                try:
+                    if torch.sum(param) != 0:
+                        print("updating img model")
+                        img_model_new_params[name] = safe_elementwise_division(
+                            param, cummulative_img_mask[name]
+                        )
+                    else:
+                        print("not updating img model")
+                        img_model_new_params[name] = img_model_curr_params[name]
+                except Exception:
+                    print(f"Checking img model param: {param} so not updating")
                     img_model_new_params[name] = img_model_curr_params[name]
-            except Exception:
-                print(f"Checking img model param: {param} so not updating")
-                img_model_new_params[name] = img_model_curr_params[name]
-        for name, param in gps_model_new_params.items():
-            try:
-                if torch.sum(param) != 0:
-                    print("updating gps model")
-                    gps_model_new_params[name] = safe_elementwise_division(
-                        param, cummulative_gps_mask[name]
+            for name, param in gps_model_new_params.items():
+                try:
+                    if torch.sum(param) != 0:
+                        print("updating gps model")
+                        gps_model_new_params[name] = safe_elementwise_division(
+                            param, cummulative_gps_mask[name]
+                        )
+                    else:
+                        print("not updating gps model")
+                        gps_model_new_params[name] = gps_model_curr_params[name]
+                except Exception:
+                    print(f"Checking gps model param: {param} so not updating")
+                    gps_model_new_params[name] = gps_model_curr_params[name]
+        else:
+            # plain AvgFed (equal weight per client)
+            for name in model_common_new_params:
+                model_common_new_params[name] = model_common_new_params[name] / max(
+                    common_client_count, 1
+                )
+
+            for name in lidar_model_new_params:
+                if lidar_client_count > 0:
+                    lidar_model_new_params[name] = (
+                        lidar_model_new_params[name] / lidar_client_count
                     )
                 else:
-                    print("not updating gps model")
+                    lidar_model_new_params[name] = lidar_model_curr_params[name]
+
+            for name in img_model_new_params:
+                if img_client_count > 0:
+                    img_model_new_params[name] = (
+                        img_model_new_params[name] / img_client_count
+                    )
+                else:
+                    img_model_new_params[name] = img_model_curr_params[name]
+
+            for name in gps_model_new_params:
+                if gps_client_count > 0:
+                    gps_model_new_params[name] = (
+                        gps_model_new_params[name] / gps_client_count
+                    )
+                else:
                     gps_model_new_params[name] = gps_model_curr_params[name]
-            except Exception:
-                print(f"Checking gps model param: {param} so not updating")
-                gps_model_new_params[name] = gps_model_curr_params[name]
 
         print("Server is updating...")
 

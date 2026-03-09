@@ -1,3 +1,5 @@
+from pyexpat import model
+
 import torch
 import os
 import pickle
@@ -105,10 +107,14 @@ def one_shot_prune_to_size(
     # 2. Flatten all parameters (absolute values) in a single 1D tensor.
     all_params = []
     for param in state_dict.values():
-        if isinstance(param, torch.Tensor):
-            all_params.append(param.view(-1))
+        if isinstance(param, torch.Tensor) and torch.is_floating_point(param):
+            all_params.append(
+                param.detach().to(device="cpu", dtype=torch.float32).reshape(-1)
+            )
+
     if not all_params:
-        raise ValueError("No tensors found in the state_dict.")
+        raise ValueError("No floating-point tensors found in the state_dict.")
+
     all_params = torch.cat(all_params, dim=0)
     abs_values = all_params.abs()
     total_num_params = abs_values.numel()
@@ -165,6 +171,60 @@ def one_shot_prune_to_size(
             pickle.dump(pruning_mask_dict, f)
 
     return pruned_state_dict, final_size_mb, threshold
+
+
+def one_shot_prune_to_param_limit(
+    state_dict,
+    max_params: float,
+):
+
+    # 2. Flatten all parameters (absolute values) in a single 1D tensor.
+    all_params = []
+    for param in state_dict.values():
+        if isinstance(param, torch.Tensor) and torch.is_floating_point(param):
+            all_params.append(
+                param.detach().to(device="cpu", dtype=torch.float32).reshape(-1)
+            )
+
+    if not all_params:
+        raise ValueError("No floating-point tensors found in the state_dict.")
+
+    all_params = torch.cat(all_params, dim=0)
+    abs_values = all_params.abs()
+    total_num_params = abs_values.numel()
+
+    # 3. Compute how many parameters we can keep non-zero to fit within max_params.
+    max_nonzero_params = int(min(max_params, total_num_params))
+
+    # 4. Determine the threshold.
+    if max_nonzero_params == 0:
+        # We must set everything to zero
+        threshold = float("inf")
+    elif max_nonzero_params == total_num_params:
+        # We can keep everything
+        threshold = 0.0
+    else:
+        # Sort in descending order to find the value at the (max_nonzero_params)-th position
+        sorted_values, _ = torch.sort(abs_values, descending=True)
+        threshold = sorted_values[max_nonzero_params - 1].item()
+
+    # 5. Prune parameters
+    pruned_state_dict = {}
+    pruning_mask_dict = {}
+    for key, param in state_dict.items():
+        if isinstance(param, torch.Tensor):
+            pruned_param = param.clone()
+            # Create a mask: 1 where |value| >= threshold, 0 otherwise
+            mask = pruned_param.abs() >= threshold
+            # Zero out values below threshold
+            pruned_param[~mask] = 0
+
+            pruned_state_dict[key] = pruned_param
+            pruning_mask_dict[key] = mask
+        else:
+            pruned_state_dict[key] = param
+
+    return pruned_state_dict, pruning_mask_dict
 
 
 if __name__ == "__main__":
