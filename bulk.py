@@ -40,7 +40,6 @@ base_cmd = [
     "3",
     "--learning-mode",
     "federated",
-    "--no-tricks",
 ]
 
 client_settings = [list(range(n)) for n in range(10, 1, -1)]
