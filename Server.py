@@ -242,38 +242,48 @@ def federated_train(
                 overhead = client.overhead
                 print("Client {} is retraining...".format(client.client_id))
 
-            WRITER.add_scalar(
-                "Client_"
-                + str(client.client_id)
-                + "/Is_Transfer_Learning_"
-                + "_".join(client.equipment),
-                evaluate_accuracy(args, client, infer_prec1),
-                i + 1,
-            )
-            WRITER.add_scalar(
-                "Client_"
-                + str(client.client_id)
-                + "/Overhead_weight_"
-                + "_".join(client.equipment),
-                overhead[1],
-                i + 1,
-            )
-            WRITER.add_scalar(
-                "Client_"
-                + str(client.client_id)
-                + "/Overhead_mask_"
-                + "_".join(client.equipment),
-                overhead[2],
-                i + 1,
-            )
-            WRITER.add_scalar(
-                "Client_"
-                + str(client.client_id)
-                + "/Overhead_total_"
-                + "_".join(client.equipment),
-                sum(overhead),
-                i + 1,
-            )
+            if args.use_tfed:
+                WRITER.add_scalar(
+                    "Client_"
+                    + str(client.client_id)
+                    + "/Is_Transfer_Learning_"
+                    + "_".join(client.equipment),
+                    evaluate_accuracy(args, client, infer_prec1),
+                    i + 1,
+                )
+                WRITER.add_scalar(
+                    "Client_"
+                    + str(client.client_id)
+                    + "/Overhead_weight_"
+                    + "_".join(client.equipment),
+                    overhead[1],
+                    i + 1,
+                )
+                WRITER.add_scalar(
+                    "Client_"
+                    + str(client.client_id)
+                    + "/Overhead_mask_"
+                    + "_".join(client.equipment),
+                    overhead[2],
+                    i + 1,
+                )
+                WRITER.add_scalar(
+                    "Client_"
+                    + str(client.client_id)
+                    + "/Overhead_total_"
+                    + "_".join(client.equipment),
+                    sum(overhead),
+                    i + 1,
+                )
+            else:
+                WRITER.add_scalar(
+                    "Client_"
+                    + str(client.client_id)
+                    + "/Overhead_total_"
+                    + "_".join(client.equipment),
+                    client.avg_overhead,
+                    i + 1,
+                )
             _common_mask = client.get_mask("common")
             _lidar_mask = client.get_mask("lidar")
             _img_mask = client.get_mask("img")
