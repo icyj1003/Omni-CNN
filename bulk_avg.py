@@ -45,7 +45,7 @@ base_cmd = [
 
 client_settings = [list(range(n)) for n in range(10, 1, -1)]
 
-for use_tfed in [True]:
+for use_tfed in [False]:
     for clients in client_settings:
         cmd = base_cmd + ["--clients", *map(str, clients)]
         if use_tfed:
@@ -54,3 +54,6 @@ for use_tfed in [True]:
         env["CUDA_VISIBLE_DEVICES"] = gpu
         print("Running:", " ".join(cmd))
         subprocess.run(cmd, check=True, env=env)
+
+
+# CUDA_VISIBLE_DEVICES=0 python bulk.py

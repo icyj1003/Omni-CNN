@@ -20,8 +20,6 @@ torch.backends.cudnn.deterministic = True
 # torch.set_deterministic(True)
 np.set_printoptions(threshold=False)
 
-WRITER = SummaryWriter()
-
 
 def str2bool(v):
     if v.lower() in ("yes", "true", "t", "y", "1"):
@@ -263,6 +261,13 @@ parser.add_argument(
 )
 
 args = parser.parse_args()
+
+
+name = "{}_clients_{}_tfed".format(len(args.clients), args.use_tfed)
+date_time = time.strftime("%Y-%m-%d-%H-%M-%S", time.localtime())
+name = name + "_" + date_time
+WRITER = SummaryWriter(log_dir=os.path.join("./runs/", name))
+
 
 # device setting
 args.cuda = not args.no_cuda and torch.cuda.is_available()
