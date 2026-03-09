@@ -340,9 +340,8 @@ class Client_pipeline:
         gps_mask=None,
         size_limit_params=None,
     ):
-        # size handling
+        # count parameter
         self.common_params = sum(p.numel() for p in model_common.parameters())
-
         self.prediction_head_params = sum(
             [
                 p.numel()
@@ -350,123 +349,78 @@ class Client_pipeline:
                 if name in ["out.weight", "out.bias"]
             ]
         )
+        max_specific_mask = {}
 
+        for name in lidar_mask:
+            max_specific_mask[name] = lidar_mask[name] + img_mask[name] + gps_mask[name]
         self.max_specific_params = sum(
-            [
-                sum([v.sum().item() for v in mask.values()])
-                for mask in [lidar_mask, img_mask, gps_mask]
-            ]
+            torch.count_nonzero(v) for v in max_specific_mask.values()
         )
 
-        occupied_specific_params = 0
-
-        if "lidar" in self.equipment:
-            occupied_specific_params += sum(
-                [v.sum().item() for v in lidar_mask.values()]
-            )
-
-        if "img" in self.equipment:
-            occupied_specific_params += sum([v.sum().item() for v in img_mask.values()])
-
-        if "gps" in self.equipment:
-            occupied_specific_params += sum([v.sum().item() for v in gps_mask.values()])
-
         # create joint specific encoder
-        joint_specific_encoder = None
-        for modality in self.equipment:
-            if modality == "lidar":
-                if joint_specific_encoder is None:
-                    joint_specific_encoder = lidar_model.state_dict()
-                else:
-                    joint_specific_encoder = sum_state_dicts(
-                        joint_specific_encoder, lidar_model.state_dict()
-                    )
-            elif modality == "img":
-                if joint_specific_encoder is None:
-                    joint_specific_encoder = img_model.state_dict()
-                else:
-                    joint_specific_encoder = sum_state_dicts(
-                        joint_specific_encoder, img_model.state_dict()
-                    )
-            elif modality == "gps":
-                if joint_specific_encoder is None:
-                    joint_specific_encoder = gps_model.state_dict()
-                else:
-                    joint_specific_encoder = sum_state_dicts(
-                        joint_specific_encoder, gps_model.state_dict()
-                    )
+        joint_specific_encoder = {}
+
+        for name in lidar_model.state_dict():
+            param = 0
+
+            if "lidar" in self.equipment:
+                param = param + (
+                    lidar_model.state_dict()[name].to(lidar_mask[name].device)
+                    * lidar_mask[name]
+                )
+
+            if "img" in self.equipment:
+                param = param + (
+                    img_model.state_dict()[name].to(lidar_mask[name].device)
+                    * img_mask[name]
+                )
+
+            if "gps" in self.equipment:
+                param = param + (
+                    gps_model.state_dict()[name].to(lidar_mask[name].device)
+                    * gps_mask[name]
+                )
+
+            joint_specific_encoder[name] = param
 
         pruned_specific_encoder, pruned_specific_mask = one_shot_prune_to_param_limit(
             joint_specific_encoder, size_limit_params - self.common_params
         )
 
-        # update_mask and model for each modality
-        pruned_lidar_mask = copy.deepcopy(lidar_mask)
-        pruned_img_mask = copy.deepcopy(img_mask)
-        pruned_gps_mask = copy.deepcopy(gps_mask)
-        pruned_lidar_model = copy.deepcopy(lidar_model)
-        pruned_img_model = copy.deepcopy(img_model)
-        pruned_gps_model = copy.deepcopy(gps_model)
+        def apply_prune(mask_dict, prune_mask):
+            return {k: mask_dict[k] * prune_mask[k] for k in mask_dict}
 
-        for modality in self.equipment:
-            if modality == "lidar":
-                pruned_lidar_mask = mul_state_dicts(
-                    pruned_lidar_mask, pruned_specific_mask
-                )
-                pruned_lidar_model.load_state_dict(
-                    {
-                        name: param
-                        * pruned_specific_mask[name].to(
-                            device=param.device, dtype=param.dtype
-                        )
-                        for name, param in lidar_model.state_dict().items()
-                    }
-                )
-            elif modality == "img":
-                pruned_img_mask = mul_state_dicts(pruned_img_mask, pruned_specific_mask)
-                pruned_img_model.load_state_dict(
-                    {
-                        name: param
-                        * pruned_specific_mask[name].to(
-                            device=param.device, dtype=param.dtype
-                        )
-                        for name, param in img_model.state_dict().items()
-                    }
-                )
-            elif modality == "gps":
-                pruned_gps_mask = mul_state_dicts(pruned_gps_mask, pruned_specific_mask)
-                pruned_gps_model.load_state_dict(
-                    {
-                        name: param
-                        * pruned_specific_mask[name].to(
-                            device=param.device, dtype=param.dtype
-                        )
-                        for name, param in gps_model.state_dict().items()
-                    }
-                )
+        pruned_masks = {}
+
+        for name, mask in {
+            "lidar": lidar_mask,
+            "img": img_mask,
+            "gps": gps_mask,
+        }.items():
+            pruned_masks[name] = apply_prune(mask, pruned_specific_mask)
 
         if "lidar" in self.equipment:
-            self.lidar_model = pruned_lidar_model
-            self.cls__lidar_mask = pruned_lidar_mask
-            self.cls__previous_lidar_mask = pruned_lidar_mask
+            self.lidar_model = lidar_model
+            self.cls__lidar_mask = pruned_masks["lidar"]
+            self.cls__previous_lidar_mask = pruned_masks["lidar"]
             self.cls__transfer_lidar_mask = None
         else:
             self.lidar_model = None
             self.cls__lidar_mask = None
             self.cls__transfer_lidar_mask = None
         if "img" in self.equipment:
-            self.img_model = pruned_img_model
-            self.cls__img_mask = pruned_img_mask
-            self.cls__previous_img_mask = pruned_img_mask
+            self.img_model = img_model
+            self.cls__img_mask = pruned_masks["img"]
+            self.cls__previous_img_mask = pruned_masks["img"]
             self.cls__transfer_img_mask = None
         else:
             self.img_model = None
             self.cls__img_mask = None
             self.cls__transfer_img_mask = None
         if "gps" in self.equipment:
-            self.gps_model = pruned_gps_model
-            self.cls__gps_mask = pruned_gps_mask
-            self.cls__previous_gps_mask = pruned_gps_mask
+            self.gps_model = gps_model
+            self.cls__gps_mask = pruned_masks["gps"]
+            self.cls__previous_gps_mask = pruned_masks["gps"]
             self.cls__transfer_gps_mask = None
         else:
             self.gps_model = None
@@ -492,45 +446,51 @@ class Client_pipeline:
         )
 
         # compute expected overhead
-
         self.occupied_specific_params = 0
 
-        if "lidar" in self.equipment and self.cls__lidar_mask is not None:
+        if "lidar" in self.equipment and pruned_masks.get("lidar") is not None:
             self.occupied_specific_params += sum(
-                torch.count_nonzero(v).item() for v in self.cls__lidar_mask.values()
+                torch.count_nonzero(v) for k, v in pruned_masks["lidar"].items()
             )
 
-        if "img" in self.equipment and self.cls__img_mask is not None:
+        if "img" in self.equipment and pruned_masks.get("img") is not None:
             self.occupied_specific_params += sum(
-                torch.count_nonzero(v).item() for v in self.cls__img_mask.values()
+                torch.count_nonzero(v) for k, v in pruned_masks["img"].items()
             )
 
-        if "gps" in self.equipment and self.cls__gps_mask is not None:
+        if "gps" in self.equipment and pruned_masks.get("gps") is not None:
             self.occupied_specific_params += sum(
-                torch.count_nonzero(v).item() for v in self.cls__gps_mask.values()
+                torch.count_nonzero(v) for k, v in pruned_masks["gps"].items()
             )
 
-        self.transfer_overhead = (
-            16  # delta accuracy
-            + self.prediction_head_params * 16  # prediction head (trainable so 16 bit)
-            # + (
-            #     self.common_params - self.prediction_head_params
-            # )  # common params (frozen so 1 bit)
-            # + self.max_specific_params  # specific params (frozen so 1 bit)
-            + self.max_specific_params  # retraining mask (1 bit)
-            + self.common_params  # common params mask (1 bit)
-        )
+        self.transfer_overhead = [
+            x / 8 / (1024**2)
+            for x in (
+                16,  # delta accuracy
+                self.prediction_head_params * 16,  # updated parameters (16 bit),
+                self.max_specific_params
+                + self.common_params,  # retraining mask (1 bit)
+                # self.common_params
+                # - self.prediction_head_params
+                # + self.max_specific_params,  # non-updated parameters (frozen so 1 bit)
+            )
+        ]
 
-        self.overhead = (
-            16  # delta acc
-            + self.common_params * 16  # common params (trainable so 16 bit)
-            + self.occupied_specific_params
-            * 16  # occupied specific params (trainable so 16 bit)
-            # + (self.max_specific_params - self.occupied_specific_params)
-            # * 1  # unoccupied specific params (frozen so 1 bit)
-            + self.max_specific_params  # retraining mask (1 bit)
-            + self.common_params  # common params mask (1 bit)
-        )
+        self.overhead = [
+            x / 8 / (1024**2)
+            for x in (
+                16,  # delta accuracy
+                self.common_params * 16  # common params (trainable so 16 bit)
+                + self.occupied_specific_params
+                * 16,  # occupied specific params (trainable so 16 bit)
+                self.max_specific_params
+                + self.common_params,  # retraining mask (1 bit)
+                # + (self.max_specific_params - self.occupied_specific_params)
+                # * 1  # unoccupied specific params (frozen so 1 bit)
+            )
+        ]
+
+        print("abc")
 
     def save_model(self):
         temp_path = os.path.join(

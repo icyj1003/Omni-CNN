@@ -225,23 +225,11 @@ def federated_train(
                 client.update_previous_accuracy(infer_prec1)
             if evaluate_accuracy(args, client, infer_prec1):
                 client.set_transfer_learning()
-                WRITER.add_scalar(
-                    "Client_"
-                    + str(client.client_id)
-                    + "/overhead_"
-                    + "_".join(client.equipment),
-                    client.transfer_overhead / 8 / (1024**2),
-                )
+                overhead = client.transfer_overhead
                 print("Client {} is transferring...".format(client.client_id))
             else:
                 client.set_relearning()
-                WRITER.add_scalar(
-                    "Client_"
-                    + str(client.client_id)
-                    + "/overhead_"
-                    + "_".join(client.equipment),
-                    client.overhead / 8 / (1024**2),
-                )
+                overhead = client.overhead
                 print("Client {} is retraining...".format(client.client_id))
 
             WRITER.add_scalar(
@@ -250,6 +238,22 @@ def federated_train(
                 + "/Is_Transfer_Learning_"
                 + "_".join(client.equipment),
                 evaluate_accuracy(args, client, infer_prec1),
+                i + 1,
+            )
+            WRITER.add_scalar(
+                "Client_"
+                + str(client.client_id)
+                + "/Overhead_weights"
+                + "_".join(client.equipment),
+                overhead[1],
+                i + 1,
+            )
+            WRITER.add_scalar(
+                "Client_"
+                + str(client.client_id)
+                + "/Overhead_mask"
+                + "_".join(client.equipment),
+                overhead[2],
                 i + 1,
             )
             _common_mask = client.get_mask("common")

@@ -107,10 +107,14 @@ def one_shot_prune_to_size(
     # 2. Flatten all parameters (absolute values) in a single 1D tensor.
     all_params = []
     for param in state_dict.values():
-        if isinstance(param, torch.Tensor):
-            all_params.append(param.view(-1))
+        if isinstance(param, torch.Tensor) and torch.is_floating_point(param):
+            all_params.append(
+                param.detach().to(device="cpu", dtype=torch.float32).reshape(-1)
+            )
+
     if not all_params:
-        raise ValueError("No tensors found in the state_dict.")
+        raise ValueError("No floating-point tensors found in the state_dict.")
+
     all_params = torch.cat(all_params, dim=0)
     abs_values = all_params.abs()
     total_num_params = abs_values.numel()
@@ -177,10 +181,14 @@ def one_shot_prune_to_param_limit(
     # 2. Flatten all parameters (absolute values) in a single 1D tensor.
     all_params = []
     for param in state_dict.values():
-        if isinstance(param, torch.Tensor):
-            all_params.append(param.view(-1))
+        if isinstance(param, torch.Tensor) and torch.is_floating_point(param):
+            all_params.append(
+                param.detach().to(device="cpu", dtype=torch.float32).reshape(-1)
+            )
+
     if not all_params:
-        raise ValueError("No tensors found in the state_dict.")
+        raise ValueError("No floating-point tensors found in the state_dict.")
+
     all_params = torch.cat(all_params, dim=0)
     abs_values = all_params.abs()
     total_num_params = abs_values.numel()
