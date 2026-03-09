@@ -130,7 +130,10 @@ def federated_train(
         ["lidar", "img"],
         ["lidar", "gps"],
     ]
-    size_limits = [x * 1e6 for x in [3.4, 2.2, 2.5, 2.0, 3.1, 2.6, 2.9, 2.4, 2.1, 1.9]]
+    size_limits = [
+        x * 1e6 if args.use_tfed else 1e8
+        for x in [3.4, 2.2, 2.5, 2.0, 3.1, 2.6, 2.9, 2.4, 2.1, 1.9]
+    ]
     list_of_clients = []
     common_total_size = 0
     lidar_total_size = 0
@@ -243,7 +246,7 @@ def federated_train(
             WRITER.add_scalar(
                 "Client_"
                 + str(client.client_id)
-                + "/Overhead_weights"
+                + "/Overhead_weight_"
                 + "_".join(client.equipment),
                 overhead[1],
                 i + 1,
@@ -251,9 +254,17 @@ def federated_train(
             WRITER.add_scalar(
                 "Client_"
                 + str(client.client_id)
-                + "/Overhead_mask"
+                + "/Overhead_mask_"
                 + "_".join(client.equipment),
                 overhead[2],
+                i + 1,
+            )
+            WRITER.add_scalar(
+                "Client_"
+                + str(client.client_id)
+                + "/Overhead_total_"
+                + "_".join(client.equipment),
+                sum(overhead),
                 i + 1,
             )
             _common_mask = client.get_mask("common")
@@ -289,6 +300,7 @@ def federated_train(
             )
 
             client.update_delta_acc(delta_acc)
+
             for name, param in client.model_common.state_dict().items():
                 # sigmoid_coeff = sigmoid_with_zero_handling(
                 #     _common_mask[name].cuda() * client.get_delta_acc()

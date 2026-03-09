@@ -490,6 +490,8 @@ class Client_pipeline:
             )
         ]
 
+        self.avg_overhead = self.common_params * 16 + self.max_specific_params * 16
+
         print("abc")
 
     def save_model(self):
