@@ -144,7 +144,7 @@ def federated_train(
         random_key = equipment_list[int(i)]
         print("Client {} has {}".format(i, random_key))
         client_data_path = os.path.join(args.base_path, "Client_" + str(i))
-        client_save_path = os.path.join(args.save_path, "Client_" + str(i))
+        client_save_path = os.path.join(args.save_path, args.name, "Client_" + str(i))
         client_pipeline = Client_pipeline(
             args,
             client_data_path,
@@ -465,5 +465,9 @@ def federated_train(
         lidar_model.load_state_dict(lidar_model_new_params)
         img_model.load_state_dict(img_model_new_params)
         gps_model.load_state_dict(gps_model_new_params)
+
+    # test the global model on joint test set
+    for client in list_of_clients:
+        client.save_model()
 
     return model_common, lidar_model, img_model, gps_model

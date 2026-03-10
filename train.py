@@ -1,4 +1,5 @@
 from __future__ import print_function
+import json
 import os
 import argparse
 import time
@@ -267,6 +268,8 @@ name = "{}_clients_{}_tfed".format(len(args.clients), args.use_tfed)
 date_time = time.strftime("%Y-%m-%d-%H-%M-%S", time.localtime())
 name = name + "_" + date_time
 WRITER = SummaryWriter(log_dir=os.path.join("./runs/", name))
+
+args.name = name
 
 
 # device setting
@@ -704,67 +707,80 @@ if __name__ == "__main__":
     # """
     # Testing the common model
     # """
-    # common_prec1 = pipeline.validate_model(
-    #     args,
-    #     lidar_model,
-    #     img_model,
-    #     gps_model,
-    #     model_common,
-    #     test_common_loader,
-    #     [0, 1, 2],
-    # )
+    all_acc = pipeline.validate_model(
+        args,
+        lidar_model,
+        img_model,
+        gps_model,
+        model_common,
+        test_common_loader,
+        [0, 1, 2],
+    )
 
-    # _prec1 = pipeline.validate_model(
-    #     args,
-    #     lidar_model,
-    #     img_model,
-    #     gps_model,
-    #     model_common,
-    #     test_common_loader,
-    #     [0, 1],
-    # )
-    # _prec1 = pipeline.validate_model(
-    #     args,
-    #     lidar_model,
-    #     img_model,
-    #     gps_model,
-    #     model_common,
-    #     test_common_loader,
-    #     [0, 2],
-    # )
-    # _prec1 = pipeline.validate_model(
-    #     args,
-    #     lidar_model,
-    #     img_model,
-    #     gps_model,
-    #     model_common,
-    #     test_common_loader,
-    #     [1, 2],
-    # )
-    # _prec1 = pipeline.validate_model(
-    #     args,
-    #     lidar_model,
-    #     img_model,
-    #     gps_model,
-    #     model_common,
-    #     test_common_loader,
-    #     [0],
-    # )
-    # _prec1 = pipeline.validate_model(
-    #     args,
-    #     lidar_model,
-    #     img_model,
-    #     gps_model,
-    #     model_common,
-    #     test_common_loader,
-    #     [1],
-    # )
-    # _prec1 = pipeline.validate_model(
-    #     args,
-    #     lidar_model,
-    #     img_model,
-    #     gps_model,
-    #     model_common,
-    #     test_common_loader,
-    #     [2],
-    # )
+    acc_01 = pipeline.validate_model(
+        args,
+        lidar_model,
+        img_model,
+        gps_model,
+        model_common,
+        test_common_loader,
+        [0, 1],
+    )
+    acc_02 = pipeline.validate_model(
+        args,
+        lidar_model,
+        img_model,
+        gps_model,
+        model_common,
+        test_common_loader,
+        [0, 2],
+    )
+    acc_12 = pipeline.validate_model(
+        args,
+        lidar_model,
+        img_model,
+        gps_model,
+        model_common,
+        test_common_loader,
+        [1, 2],
+    )
+    acc_0 = pipeline.validate_model(
+        args,
+        lidar_model,
+        img_model,
+        gps_model,
+        model_common,
+        test_common_loader,
+        [0],
+    )
+    acc_1 = pipeline.validate_model(
+        args,
+        lidar_model,
+        img_model,
+        gps_model,
+        model_common,
+        test_common_loader,
+        [1],
+    )
+    acc_2 = pipeline.validate_model(
+        args,
+        lidar_model,
+        img_model,
+        gps_model,
+        model_common,
+        test_common_loader,
+        [2],
+    )
+
+    results = {
+        "acc_all": all_acc.item(),
+        "acc_01": acc_01.item(),
+        "acc_02": acc_02.item(),
+        "acc_12": acc_12.item(),
+        "acc_0": acc_0.item(),
+        "acc_1": acc_1.item(),
+        "acc_2": acc_2.item(),
+    }
+
+    with open(os.path.join(args.save_path, name, "results.json"), "w") as f:
+        json.dump(results, f)
