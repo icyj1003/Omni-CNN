@@ -40,8 +40,16 @@ base_cmd = [
     "3",
     "--learning-mode",
     "federated",
+    "--batch-size",
+    "64",
+    "--momentum",
+    "0.9",
+    "--weight-decay",
+    "0.0001",
     "--comms-round",
-    "50",
+    "100",
+    "--lr",
+    "0.01",
 ]
 
 client_settings = [list(range(n)) for n in range(10, 1, -2)]

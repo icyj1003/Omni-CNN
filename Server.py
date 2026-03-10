@@ -130,10 +130,7 @@ def federated_train(
         ["lidar", "img"],
         ["lidar", "gps"],
     ]
-    size_limits = [
-        x * 1e6 if args.use_tfed else 1e8
-        for x in [3.4, 2.2, 2.5, 2.0, 3.1, 2.6, 2.9, 2.4, 2.1, 1.9]
-    ]
+    size_limits = [x * 1e6 for x in [3.4, 2.2, 2.5, 2.0, 3.1, 2.6, 2.9, 2.4, 2.1, 1.9]]
     list_of_clients = []
     common_total_size = 0
     lidar_total_size = 0
