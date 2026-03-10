@@ -465,3 +465,5 @@ def federated_train(
         lidar_model.load_state_dict(lidar_model_new_params)
         img_model.load_state_dict(img_model_new_params)
         gps_model.load_state_dict(gps_model_new_params)
+
+    return model_common, lidar_model, img_model, gps_model

@@ -660,7 +660,7 @@ if __name__ == "__main__":
         )
     elif args.learning_mode == "federated":
         print("*************** Training Common Model on Federated mode ***************")
-        model_common = federated_train(
+        model_common, lidar_model, img_model, gps_model = federated_train(
             args,
             model_common,
             lidar_model,

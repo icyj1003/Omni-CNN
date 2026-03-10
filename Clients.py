@@ -825,7 +825,7 @@ class Client_pipeline:
                 val_batch_time.update(time.time() - end)
                 end = time.time()
             show_results(self.mode_split, val_top1, val_batch_time, "Validation ")
-        self.save_model()
+        # self.save_model()
 
     def model_testing_on_local_data(self):
         # switch to evaluate mode

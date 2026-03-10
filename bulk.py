@@ -40,10 +40,9 @@ base_cmd = [
     "3",
     "--learning-mode",
     "federated",
-    "--no-tricks",
 ]
 
-client_settings = [list(range(n)) for n in range(10, 1, -1)]
+client_settings = [list(range(n)) for n in range(10, 1, -2)]
 
 for use_tfed in [True]:
     for clients in client_settings:
