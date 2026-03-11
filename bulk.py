@@ -48,8 +48,6 @@ base_cmd = [
     "0.0001",
     "--comms-round",
     "100",
-    "--lr",
-    "0.01",
 ]
 
 client_settings = [list(range(n)) for n in range(10, 1, -2)]

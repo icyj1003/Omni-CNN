@@ -3,6 +3,7 @@ import torch
 from tqdm import tqdm
 import copy
 import random
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from Clients import Client_pipeline, AverageMeter
 
 seed = 50
@@ -104,6 +105,75 @@ def check_and_create(dir_path):
     else:
         os.makedirs(dir_path)
         return False
+
+
+def _run_single_client_round(
+    args,
+    client,
+    round_idx,
+    model_common_curr_params,
+    lidar_model_curr_params,
+    img_model_curr_params,
+    gps_model_curr_params,
+):
+    client.update_model(
+        model_common_curr_params,
+        lidar_model_curr_params,
+        img_model_curr_params,
+        gps_model_curr_params,
+    )
+    print("Client {} is inferencing...".format(client.client_id))
+    infer_prec1 = client.model_testing_on_local_data()
+
+    if round_idx == 0:
+        client.update_previous_accuracy(infer_prec1)
+
+    is_transfer = evaluate_accuracy(args, client, infer_prec1)
+    if is_transfer:
+        client.set_transfer_learning()
+        overhead = client.transfer_overhead
+        print("Client {} is transferring...".format(client.client_id))
+    else:
+        client.set_relearning()
+        overhead = client.overhead
+        print("Client {} is retraining...".format(client.client_id))
+
+    _common_mask = client.get_mask("common")
+    _lidar_mask = client.get_mask("lidar")
+    _img_mask = client.get_mask("img")
+    _gps_mask = client.get_mask("gps")
+
+    print(
+        f"Checking mask... common_mask: {_common_mask is not None}, lidar_mask: {_lidar_mask is not None}, img_mask: {_img_mask is not None}, gps_mask: {_gps_mask is not None}"
+    )
+
+    client.client_local_training(5)
+    prec1 = client.model_testing_on_local_data()
+    delta_acc = prec1 - infer_prec1
+    client.update_delta_acc(delta_acc)
+
+    return {
+        "client": client,
+        "infer_prec1": infer_prec1,
+        "prec1": prec1,
+        "delta_acc": delta_acc,
+        "is_transfer": is_transfer,
+        "overhead": overhead,
+        "common_mask": _common_mask,
+        "lidar_mask": _lidar_mask,
+        "img_mask": _img_mask,
+        "gps_mask": _gps_mask,
+        "model_common_state": copy.deepcopy(client.model_common.state_dict()),
+        "lidar_state": copy.deepcopy(client.lidar_model.state_dict())
+        if _lidar_mask is not None
+        else None,
+        "img_state": copy.deepcopy(client.img_model.state_dict())
+        if _img_mask is not None
+        else None,
+        "gps_state": copy.deepcopy(client.gps_model.state_dict())
+        if _gps_mask is not None
+        else None,
+    }
 
 
 def federated_train(
@@ -210,15 +280,56 @@ def federated_train(
         img_client_count = 0
         gps_client_count = 0
 
-        for client in list_of_clients:
-            client.update_model(
-                model_common_curr_params,
-                lidar_model_curr_params,
-                img_model_curr_params,
-                gps_model_curr_params,
+        max_client_workers = max(1, int(getattr(args, "client_train_workers", 1)))
+        if max_client_workers == 1 or len(list_of_clients) == 1:
+            client_round_results = [
+                _run_single_client_round(
+                    args,
+                    client,
+                    i,
+                    model_common_curr_params,
+                    lidar_model_curr_params,
+                    img_model_curr_params,
+                    gps_model_curr_params,
+                )
+                for client in list_of_clients
+            ]
+        else:
+            print(
+                "Running client training in parallel with {} workers".format(
+                    max_client_workers
+                )
             )
-            print("Client {} is inferencing...".format(client.client_id))
-            infer_prec1 = client.model_testing_on_local_data()
+            client_round_results = []
+            with ThreadPoolExecutor(max_workers=max_client_workers) as executor:
+                futures = {
+                    executor.submit(
+                        _run_single_client_round,
+                        args,
+                        client,
+                        i,
+                        model_common_curr_params,
+                        lidar_model_curr_params,
+                        img_model_curr_params,
+                        gps_model_curr_params,
+                    ): client
+                    for client in list_of_clients
+                }
+                for future in as_completed(futures):
+                    client_round_results.append(future.result())
+
+        client_round_results.sort(key=lambda x: int(x["client"].client_id))
+
+        for result in client_round_results:
+            client = result["client"]
+            infer_prec1 = result["infer_prec1"]
+            prec1 = result["prec1"]
+            delta_acc = result["delta_acc"]
+            _common_mask = result["common_mask"]
+            _lidar_mask = result["lidar_mask"]
+            _img_mask = result["img_mask"]
+            _gps_mask = result["gps_mask"]
+
             top1_infer.update(infer_prec1, 1)
             WRITER.add_scalar(
                 "Client_"
@@ -228,24 +339,15 @@ def federated_train(
                 infer_prec1,
                 i,
             )
-            if i == 0:
-                client.update_previous_accuracy(infer_prec1)
-            if evaluate_accuracy(args, client, infer_prec1):
-                client.set_transfer_learning()
-                overhead = client.transfer_overhead
-                print("Client {} is transferring...".format(client.client_id))
-            else:
-                client.set_relearning()
-                overhead = client.overhead
-                print("Client {} is retraining...".format(client.client_id))
 
             if args.use_tfed:
+                overhead = result["overhead"]
                 WRITER.add_scalar(
                     "Client_"
                     + str(client.client_id)
                     + "/Is_Transfer_Learning_"
                     + "_".join(client.equipment),
-                    evaluate_accuracy(args, client, infer_prec1),
+                    result["is_transfer"],
                     i + 1,
                 )
                 WRITER.add_scalar(
@@ -281,18 +383,7 @@ def federated_train(
                     client.avg_overhead,
                     i + 1,
                 )
-            _common_mask = client.get_mask("common")
-            _lidar_mask = client.get_mask("lidar")
-            _img_mask = client.get_mask("img")
-            _gps_mask = client.get_mask("gps")
 
-            print(
-                f"Checking mask... common_mask: {_common_mask is not None}, lidar_mask: {_lidar_mask is not None}, img_mask: {_img_mask is not None}, gps_mask: {_gps_mask is not None}"
-            )
-
-            client.client_local_training(5)
-
-            prec1 = client.model_testing_on_local_data()
             WRITER.add_scalar(
                 "Client_"
                 + str(client.client_id)
@@ -303,7 +394,6 @@ def federated_train(
             )
             top1.update(prec1, 1)
 
-            delta_acc = prec1 - infer_prec1
             WRITER.add_scalar(
                 "Client_"
                 + str(client.client_id)
@@ -313,9 +403,8 @@ def federated_train(
                 i + 1,
             )
 
-            client.update_delta_acc(delta_acc)
-
-            for name, param in client.model_common.state_dict().items():
+            common_state = result["model_common_state"]
+            for name, param in common_state.items():
                 if args.use_tfed:
                     model_common_new_params[name] += param * (
                         _common_mask[name].cuda() * client.get_train_size()
@@ -325,51 +414,54 @@ def federated_train(
                     )
                 else:
                     # plain average (equal weight per client)
-                    if name == next(iter(client.model_common.state_dict().keys())):
-                        common_client_count += 1
                     model_common_new_params[name] += param
+            if not args.use_tfed:
+                common_client_count += 1
 
-            if _lidar_mask is not None:
-                for name, param in client.lidar_model.state_dict().items():
+            if _lidar_mask is not None and result["lidar_state"] is not None:
+                for name, param in result["lidar_state"].items():
                     if args.use_tfed:
-                        lidar_model_new_params[name] += param * (
-                            _lidar_mask[name].cuda() * client.get_train_size()
+                        lidar_weights = sigmoid_with_zero_handling(
+                            _lidar_mask[name].cuda()
+                            * client.get_delta_acc()
+                            * client.get_train_size()
                         )
-                        cummulative_lidar_mask[name] += (
-                            _lidar_mask[name].cuda() * client.get_train_size()
-                        )
+                        lidar_model_new_params[name] += param * lidar_weights
+                        cummulative_lidar_mask[name] += lidar_weights
                     else:
-                        if name == next(iter(client.lidar_model.state_dict().keys())):
-                            lidar_client_count += 1
                         lidar_model_new_params[name] += param
+                if not args.use_tfed:
+                    lidar_client_count += 1
 
-            if _img_mask is not None:
-                for name, param in client.img_model.state_dict().items():
+            if _img_mask is not None and result["img_state"] is not None:
+                for name, param in result["img_state"].items():
                     if args.use_tfed:
-                        img_model_new_params[name] += param * (
-                            _img_mask[name].cuda() * client.get_train_size()
+                        img_weights = sigmoid_with_zero_handling(
+                            _img_mask[name].cuda()
+                            * client.get_delta_acc()
+                            * client.get_train_size()
                         )
-                        cummulative_img_mask[name] += (
-                            _img_mask[name].cuda() * client.get_train_size()
-                        )
+                        img_model_new_params[name] += param * img_weights
+                        cummulative_img_mask[name] += img_weights
                     else:
-                        if name == next(iter(client.img_model.state_dict().keys())):
-                            img_client_count += 1
                         img_model_new_params[name] += param
+                if not args.use_tfed:
+                    img_client_count += 1
 
-            if _gps_mask is not None:
-                for name, param in client.gps_model.state_dict().items():
+            if _gps_mask is not None and result["gps_state"] is not None:
+                for name, param in result["gps_state"].items():
                     if args.use_tfed:
-                        gps_model_new_params[name] += param * (
-                            _gps_mask[name].cuda() * client.get_train_size()
+                        gps_weights = sigmoid_with_zero_handling(
+                            _gps_mask[name].cuda()
+                            * client.get_delta_acc()
+                            * client.get_train_size()
                         )
-                        cummulative_gps_mask[name] += (
-                            _gps_mask[name].cuda() * client.get_train_size()
-                        )
+                        gps_model_new_params[name] += param * gps_weights
+                        cummulative_gps_mask[name] += gps_weights
                     else:
-                        if name == next(iter(client.gps_model.state_dict().keys())):
-                            gps_client_count += 1
                         gps_model_new_params[name] += param
+                if not args.use_tfed:
+                    gps_client_count += 1
 
             # client log here
 
