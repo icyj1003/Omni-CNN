@@ -8,11 +8,6 @@ from Clients import Client_pipeline, AverageMeter
 seed = 50
 random.seed(seed)
 
-
-from datetime import datetime
-import math
-
-
 gps_accuracy_threshold = 29.3
 img_accuracy_threshold = 71
 lidar_accuracy_threshold = 85
@@ -130,10 +125,7 @@ def federated_train(
         ["lidar", "img"],
         ["lidar", "gps"],
     ]
-    size_limits = [
-        x * 1e6 if args.use_tfed else 1e8
-        for x in [3.4, 2.2, 2.5, 2.0, 3.1, 2.6, 2.9, 2.4, 2.1, 1.9]
-    ]
+    size_limits = [x * 1e6 for x in [3.4, 2.2, 2.5, 2.0, 3.1, 2.6, 2.9, 2.4, 2.1, 1.9]]
     list_of_clients = []
     common_total_size = 0
     lidar_total_size = 0
@@ -144,7 +136,7 @@ def federated_train(
         random_key = equipment_list[int(i)]
         print("Client {} has {}".format(i, random_key))
         client_data_path = os.path.join(args.base_path, "Client_" + str(i))
-        client_save_path = os.path.join(args.save_path, "Client_" + str(i))
+        client_save_path = os.path.join(args.save_path, args.name, "Client_" + str(i))
         client_pipeline = Client_pipeline(
             args,
             client_data_path,
@@ -289,10 +281,6 @@ def federated_train(
             _img_mask = client.get_mask("img")
             _gps_mask = client.get_mask("gps")
 
-            print(
-                f"Checking mask... common_mask: {_common_mask is not None}, lidar_mask: {_lidar_mask is not None}, img_mask: {_img_mask is not None}, gps_mask: {_gps_mask is not None}"
-            )
-
             client.client_local_training(5)
 
             prec1 = client.model_testing_on_local_data()
@@ -320,55 +308,63 @@ def federated_train(
 
             for name, param in client.model_common.state_dict().items():
                 if args.use_tfed:
-                    model_common_new_params[name] += param * (
-                        _common_mask[name].cuda() * client.get_train_size()
+                    common_weights = (
+                        sigmoid_with_zero_handling(
+                            _common_mask[name].cuda() * client.get_delta_acc()
+                        )
+                        # * client.get_train_size()
                     )
-                    cummulative_common_mask[name] += (
-                        _common_mask[name].cuda() * client.get_train_size()
-                    )
+
+                    model_common_new_params[name] += param * common_weights
+                    cummulative_common_mask[name] += common_weights
                 else:
-                    # plain average (equal weight per client)
-                    if name == next(iter(client.model_common.state_dict().keys())):
-                        common_client_count += 1
                     model_common_new_params[name] += param
 
             if _lidar_mask is not None:
+                avg_weight_mask = 0
                 for name, param in client.lidar_model.state_dict().items():
                     if args.use_tfed:
-                        lidar_model_new_params[name] += param * (
-                            _lidar_mask[name].cuda() * client.get_train_size()
+                        lidar_weights = (
+                            sigmoid_with_zero_handling(
+                                _lidar_mask[name].cuda() * client.get_delta_acc()
+                            )
+                            # * client.get_train_size()
                         )
-                        cummulative_lidar_mask[name] += (
-                            _lidar_mask[name].cuda() * client.get_train_size()
-                        )
+
+                        avg_weight_mask += lidar_weights.mean().item()
+
+                        lidar_model_new_params[name] += param * lidar_weights
+                        cummulative_lidar_mask[name] += lidar_weights
                     else:
-                        if name == next(iter(client.lidar_model.state_dict().keys())):
-                            lidar_client_count += 1
                         lidar_model_new_params[name] += param
 
             if _img_mask is not None:
                 for name, param in client.img_model.state_dict().items():
                     if args.use_tfed:
-                        img_model_new_params[name] += param * (
-                            _img_mask[name].cuda() * client.get_train_size()
+                        img_weights = (
+                            sigmoid_with_zero_handling(
+                                _img_mask[name].cuda() * client.get_delta_acc()
+                            )
+                            # * client.get_train_size()
                         )
-                        cummulative_img_mask[name] += (
-                            _img_mask[name].cuda() * client.get_train_size()
-                        )
+
+                        img_model_new_params[name] += param * img_weights
+                        cummulative_img_mask[name] += img_weights
                     else:
-                        if name == next(iter(client.img_model.state_dict().keys())):
-                            img_client_count += 1
                         img_model_new_params[name] += param
 
             if _gps_mask is not None:
                 for name, param in client.gps_model.state_dict().items():
                     if args.use_tfed:
-                        gps_model_new_params[name] += param * (
-                            _gps_mask[name].cuda() * client.get_train_size()
+                        gps_weights = (
+                            sigmoid_with_zero_handling(
+                                _gps_mask[name].cuda() * client.get_delta_acc()
+                            )
+                            # * client.get_train_size()
                         )
-                        cummulative_gps_mask[name] += (
-                            _gps_mask[name].cuda() * client.get_train_size()
-                        )
+
+                        gps_model_new_params[name] += param * gps_weights
+                        cummulative_gps_mask[name] += gps_weights
                     else:
                         if name == next(iter(client.gps_model.state_dict().keys())):
                             gps_client_count += 1
@@ -465,3 +461,9 @@ def federated_train(
         lidar_model.load_state_dict(lidar_model_new_params)
         img_model.load_state_dict(img_model_new_params)
         gps_model.load_state_dict(gps_model_new_params)
+
+    # test the global model on joint test set
+    for client in list_of_clients:
+        client.save_model()
+
+    return model_common, lidar_model, img_model, gps_model

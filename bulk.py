@@ -40,10 +40,17 @@ base_cmd = [
     "3",
     "--learning-mode",
     "federated",
-    "--no-tricks",
+    "--batch-size",
+    "64",
+    "--momentum",
+    "0.9",
+    "--weight-decay",
+    "0.0001",
+    "--comms-round",
+    "100",
 ]
 
-client_settings = [list(range(n)) for n in range(10, 1, -1)]
+client_settings = [list(range(n)) for n in range(10, 1, -2)]
 
 for use_tfed in [True]:
     for clients in client_settings:

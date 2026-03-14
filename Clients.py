@@ -501,6 +501,7 @@ class Client_pipeline:
             "experiments/federated_learning",
             "Client_" + str(self.client_id),
         )
+        temp_path = self.client_save_path
         check_and_create(temp_path)
         if "lidar" in self.equipment:
             torch.save(
@@ -549,10 +550,7 @@ class Client_pipeline:
             return self.cls__model_common_mask
 
     def update_model(self, model_common_params, lidar_params, img_params, gps_params):
-        temp_path = os.path.join(
-            "experiments/federated_learning",
-            "Client_" + str(self.client_id),
-        )
+        temp_path = self.client_save_path
         try:
             self.model_common.load_state_dict(
                 torch.load(
@@ -825,7 +823,7 @@ class Client_pipeline:
                 val_batch_time.update(time.time() - end)
                 end = time.time()
             show_results(self.mode_split, val_top1, val_batch_time, "Validation ")
-        self.save_model()
+        # self.save_model()
 
     def model_testing_on_local_data(self):
         # switch to evaluate mode
