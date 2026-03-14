@@ -397,22 +397,12 @@ if __name__ == "__main__":
 
     ## Start loading individual retrained models
     task0_save_path = os.path.join(args.save_path_exp, "task" + str(0))
-    task0_model.load_state_dict(
-        torch.load(
-            task0_save_path + "/retrained.pt"
-        )
-    )
+    task0_model.load_state_dict(torch.load(task0_save_path + "/retrained.pt"))
     task1_save_path = os.path.join(args.save_path_exp, "task" + str(1))
-    task1_model.load_state_dict(
-        torch.load(
-            task1_save_path + "/retrained.pt"
-        )
-    )
+    task1_model.load_state_dict(torch.load(task1_save_path + "/retrained.pt"))
     task2_save_path = os.path.join(args.save_path_exp, "task" + str(2))
     task2_model.load_state_dict(
-        torch.load(
-            task2_save_path + "/{}{}.pt".format(args.arch, args.depth)
-        )
+        torch.load(task2_save_path + "/{}{}.pt".format(args.arch, args.depth))
     )
 
     """
