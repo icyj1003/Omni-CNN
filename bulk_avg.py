@@ -52,7 +52,7 @@ base_cmd = [
 
 client_settings = [list(range(n)) for n in range(10, 1, -2)]
 
-for use_tfed in [True]:
+for use_tfed in [False]:
     for clients in client_settings:
         cmd = base_cmd + ["--clients", *map(str, clients)]
         if use_tfed:
