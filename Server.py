@@ -125,7 +125,9 @@ def federated_train(
         ["lidar", "img"],
         ["lidar", "gps"],
     ]
-    size_limits = [x * 1e6 for x in [3.4, 2.2, 2.5, 2.0, 3.1, 2.6, 2.9, 2.4, 2.1, 1.9]]
+    size_limit_list = [
+        x * 1e6 for x in [3.4, 2.2, 2.5, 2.0, 3.1, 2.6, 2.9, 2.4, 2.1, 1.9]
+    ]
     list_of_clients = []
     common_total_size = 0
     lidar_total_size = 0
@@ -161,19 +163,25 @@ def federated_train(
             img_mask,
             gps_model,
             gps_mask,
-            size_limits[int(i)],
+            size_limit_list[int(i)],
         )
 
         client_pipeline.configure_optimizer()
         list_of_clients.append(client_pipeline)
+
     for i in tqdm(range(args.comms_round)):
-        top1 = AverageMeter()
         print("Start Round {} ...".format(i + 1))
+
+        # init metric counters
+        top1 = AverageMeter()
         top1_infer = AverageMeter()
+
+        # init placeholders for global model aggregation
         model_common_curr_params = copy.deepcopy(model_common.state_dict())
         lidar_model_curr_params = copy.deepcopy(lidar_model.state_dict())
         img_model_curr_params = copy.deepcopy(img_model.state_dict())
         gps_model_curr_params = copy.deepcopy(gps_model.state_dict())
+
         model_common_new_params = dict(
             [(name, 0) for name, param in model_common_curr_params.items()]
         )
@@ -200,11 +208,6 @@ def federated_train(
         )
 
         # AvgFed counters (used only when args.use_tfed == False)
-        common_client_count = 0
-        lidar_client_count = 0
-        img_client_count = 0
-        gps_client_count = 0
-
         for client in list_of_clients:
             client.update_model(
                 model_common_curr_params,
@@ -223,59 +226,17 @@ def federated_train(
                 infer_prec1,
                 i,
             )
+
+            # update client status based on inference accuracy
             if i == 0:
                 client.update_previous_accuracy(infer_prec1)
             if evaluate_accuracy(args, client, infer_prec1):
                 client.set_transfer_learning()
-                overhead = client.transfer_overhead
                 print("Client {} is transferring...".format(client.client_id))
             else:
                 client.set_relearning()
-                overhead = client.overhead
                 print("Client {} is retraining...".format(client.client_id))
 
-            if args.use_tfed:
-                WRITER.add_scalar(
-                    "Client_"
-                    + str(client.client_id)
-                    + "/Is_Transfer_Learning_"
-                    + "_".join(client.equipment),
-                    evaluate_accuracy(args, client, infer_prec1),
-                    i + 1,
-                )
-                WRITER.add_scalar(
-                    "Client_"
-                    + str(client.client_id)
-                    + "/Overhead_weight_"
-                    + "_".join(client.equipment),
-                    overhead[1],
-                    i + 1,
-                )
-                WRITER.add_scalar(
-                    "Client_"
-                    + str(client.client_id)
-                    + "/Overhead_mask_"
-                    + "_".join(client.equipment),
-                    overhead[2],
-                    i + 1,
-                )
-                WRITER.add_scalar(
-                    "Client_"
-                    + str(client.client_id)
-                    + "/Overhead_total_"
-                    + "_".join(client.equipment),
-                    sum(overhead),
-                    i + 1,
-                )
-            else:
-                WRITER.add_scalar(
-                    "Client_"
-                    + str(client.client_id)
-                    + "/Overhead_total_"
-                    + "_".join(client.equipment),
-                    client.avg_overhead,
-                    i + 1,
-                )
             _common_mask = client.get_mask("common")
             _lidar_mask = client.get_mask("lidar")
             _img_mask = client.get_mask("img")
@@ -366,8 +327,6 @@ def federated_train(
                         gps_model_new_params[name] += param * gps_weights
                         cummulative_gps_mask[name] += gps_weights
                     else:
-                        if name == next(iter(client.gps_model.state_dict().keys())):
-                            gps_client_count += 1
                         gps_model_new_params[name] += param
 
             # client log here
@@ -428,29 +387,29 @@ def federated_train(
             # plain AvgFed (equal weight per client)
             for name in model_common_new_params:
                 model_common_new_params[name] = model_common_new_params[name] / max(
-                    common_client_count, 1
+                    common_total_size, 1
                 )
 
             for name in lidar_model_new_params:
-                if lidar_client_count > 0:
+                if lidar_total_size > 0:
                     lidar_model_new_params[name] = (
-                        lidar_model_new_params[name] / lidar_client_count
+                        lidar_model_new_params[name] / lidar_total_size
                     )
                 else:
                     lidar_model_new_params[name] = lidar_model_curr_params[name]
 
             for name in img_model_new_params:
-                if img_client_count > 0:
+                if img_total_size > 0:
                     img_model_new_params[name] = (
-                        img_model_new_params[name] / img_client_count
+                        img_model_new_params[name] / img_total_size
                     )
                 else:
                     img_model_new_params[name] = img_model_curr_params[name]
 
             for name in gps_model_new_params:
-                if gps_client_count > 0:
+                if gps_total_size > 0:
                     gps_model_new_params[name] = (
-                        gps_model_new_params[name] / gps_client_count
+                        gps_model_new_params[name] / gps_total_size
                     )
                 else:
                     gps_model_new_params[name] = gps_model_curr_params[name]

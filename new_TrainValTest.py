@@ -173,16 +173,10 @@ class data_common_loader(object):
 
 
 class CVTrainValTest:
-    def __init__(self, base_path, save_path, base_common_path, save_common_path):
+    def __init__(self, base_path, base_common_path):
 
         self.base_path = base_path
-        self.save_path = save_path
-        print(base_path)
-        print(save_path)
         self.base_common_path = base_common_path
-        self.save_common_path = save_common_path
-        print(base_common_path)
-        print(save_common_path)
 
     def load_data_cifar(self, batch_size):
         self.x_train = np.asarray(np.load(os.path.join(self.base_path, "train/X.npy")))
@@ -442,7 +436,8 @@ class CVTrainValTest:
                 _mode_split = random.sample([0, 1, 2], mode_num)
             else:
                 mode_num = random.randint(1, len(mode_split))
-                _mode_split = random.sample(mode_split, mode_num)
+                _mode_split = random.sample(mode_split, mode_num, seed=args.seed)
+                # _mode_split = mode_split
             # print("mode_split", mode_split)
             specific_features = (
                 torch.zeros((input_common.shape[0], 3, 64)).float().cuda()
@@ -474,21 +469,21 @@ class CVTrainValTest:
             shared_features, final_output = model_common(input, specific_features)
 
             # TODO: Compute more loss functions, including cross entropy loss, similarity loss, and sparsity loss
+            z1 = shared_features[0 : len(shared_features) + 1 : 3]
+            z2 = shared_features[1 : len(shared_features) + 1 : 3]
+            z3 = shared_features[2 : len(shared_features) + 1 : 3]
+
             shared_loss = (
-                distribution_loss(
-                    shared_features[0 : len(shared_features) + 1 : 3],
-                    shared_features[1 : len(shared_features) + 1 : 3],
-                )
-                + distribution_loss(
-                    shared_features[0 : len(shared_features) + 1 : 3],
-                    shared_features[2 : len(shared_features) + 1 : 3],
-                )
-                + distribution_loss(
-                    shared_features[1 : len(shared_features) + 1 : 3],
-                    shared_features[2 : len(shared_features) + 1 : 3],
-                )
+                distribution_loss(z1, z2)
+                + distribution_loss(z1, z3)
+                + distribution_loss(z2, z3)
             )
-            ce_loss = criterion(final_output, target[:, 0]) + 0.2 * shared_loss
+            ce_loss = criterion(final_output, target[:, 0])
+
+            loss_1 = shared_loss.item()
+            loss_2 = ce_loss.item()
+
+            ce_loss += 0.2 * shared_loss
 
             # measure accuracy and record loss
             prec1, _ = accuracy(final_output, target, topk=(1, 5))
@@ -496,12 +491,22 @@ class CVTrainValTest:
             top1.update(prec1[0], input.size(0))
 
             WRITER.add_scalar(
-                "Loss/train_task_lidar_img_gps",
+                "Loss/distribution_loss",
+                loss_1,
+                epoch * len(train_common_loader) + i,
+            )
+            WRITER.add_scalar(
+                "Loss/cross_entropy_loss",
+                loss_2,
+                epoch * len(train_common_loader) + i,
+            )
+            WRITER.add_scalar(
+                "Loss/total_loss",
                 ce_loss.item(),
                 epoch * len(train_common_loader) + i,
             )
             WRITER.add_scalar(
-                "Loss/train_task_lidar_img_gps",
+                "Accuracy/train_task_lidar_img_gps",
                 prec1[0],
                 epoch * len(train_common_loader) + i,
             )

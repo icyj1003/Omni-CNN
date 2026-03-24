@@ -1,3 +1,5 @@
+import argparse
+
 from scipy.fftpack import fft
 from testers import *
 import scipy.io as spio
@@ -10,6 +12,23 @@ import os
 
 # torch.use_deterministic_algorithms(True)
 torch.backends.cudnn.deterministic = True
+
+
+def str2bool(v):
+    if v.lower() in ("yes", "true", "t", "y", "1"):
+        return True
+    elif v.lower() in ("no", "false", "f", "n", "0"):
+        return False
+    else:
+        raise argparse.ArgumentTypeError("Boolean value expected.")
+
+
+def check_and_create(dir_path):
+    if os.path.exists(dir_path):
+        return True
+    else:
+        os.makedirs(dir_path)
+        return False
 
 
 # torch.set_deterministic(True)

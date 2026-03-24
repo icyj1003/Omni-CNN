@@ -39,7 +39,8 @@
                 "--tasks",
                 "3",
                 "--learning-mode",
-                "federated"
+                "federated",
+                "--use_tfed",
             ],
             "env": {
                 "CUDA_VISIBLE_DEVICES": "0"

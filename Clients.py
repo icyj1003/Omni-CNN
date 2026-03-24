@@ -247,20 +247,20 @@ class Client_pipeline:
         self.mode_split = convert(equipment)
         self.client_data_path = client_data_path
         self.client_save_path = client_save_path
-        self.cls__transfer_layer = ["out.weight", "out.bias"]
-        self.cls__previous_accuracy = 0
-        self.cls__delta_acc = 0
+        self.transfer_layer = ["out.weight", "out.bias"]
+        self.previous_accuracy = 0
+        self.delta_acc = 0
 
     def update_previous_accuracy(self, acc):
-        self.cls__previous_accuracy = acc
+        self.previous_accuracy = acc
 
     def update_delta_acc(self, delta_acc):
-        self.cls__delta_acc = delta_acc
-        # self.cls__previous_accuracy = acc / 100
+        self.delta_acc = delta_acc
+        # self.previous_accuracy = acc / 100
 
     def get_delta_acc(self):
-        # print("Delta Accuracy", self.cls__delta_acc)
-        return self.cls__delta_acc
+        # print("Delta Accuracy", self.delta_acc)
+        return self.delta_acc
 
     def load_data(self):
         self.client_train_data = Client_data_loader(
@@ -273,21 +273,21 @@ class Client_pipeline:
             "test", self.equipment, self.client_data_path
         )
         self.train_size = len(self.client_train_data)
-        self.cls__train_loader = DataLoader(
+        self.train_loader = DataLoader(
             self.client_train_data,
             batch_size=self.args.batch_size,
             shuffle=True,
             num_workers=8,
             worker_init_fn=seed_worker,
         )
-        self.cls__val_loader = DataLoader(
+        self.val_loader = DataLoader(
             self.client_val_data,
             batch_size=self.args.batch_size,
             shuffle=True,
             num_workers=8,
             worker_init_fn=seed_worker,
         )
-        self.cls__test_loader = DataLoader(
+        self.test_loader = DataLoader(
             self.client_test_data,
             batch_size=self.args.batch_size,
             shuffle=False,
@@ -302,7 +302,7 @@ class Client_pipeline:
 
     def set_transfer_learning(self):
         for name, W in self.model_common.named_parameters():
-            if name not in self.cls__transfer_layer:
+            if name not in self.transfer_layer:
                 W.requires_grad = False
         if "lidar" in self.equipment:
             for name, W in self.lidar_model.named_parameters():
@@ -313,7 +313,7 @@ class Client_pipeline:
         if "gps" in self.equipment:
             for name, W in self.gps_model.named_parameters():
                 W.requires_grad = False
-        self.cls__transfer = True
+        self.transfer = True
 
     def set_relearning(self):
         for name, W in self.model_common.named_parameters():
@@ -327,7 +327,7 @@ class Client_pipeline:
         if "gps" in self.equipment:
             for name, W in self.gps_model.named_parameters():
                 W.requires_grad = True
-        self.cls__transfer = False
+        self.transfer = False
 
     def load_model(
         self,
@@ -340,161 +340,52 @@ class Client_pipeline:
         gps_mask=None,
         size_limit_params=None,
     ):
-        # count parameter
-        self.common_params = sum(p.numel() for p in model_common.parameters())
-        self.prediction_head_params = sum(
-            [
-                p.numel()
-                for name, p in model_common.state_dict().items()
-                if name in ["out.weight", "out.bias"]
-            ]
-        )
-        max_specific_mask = {}
-
-        for name in lidar_mask:
-            max_specific_mask[name] = lidar_mask[name] + img_mask[name] + gps_mask[name]
-        self.max_specific_params = sum(
-            torch.count_nonzero(v) for v in max_specific_mask.values()
-        )
-
-        # create joint specific encoder
-        joint_specific_encoder = {}
-
-        for name in lidar_model.state_dict():
-            param = 0
-
-            if "lidar" in self.equipment:
-                param = param + (
-                    lidar_model.state_dict()[name].to(lidar_mask[name].device)
-                    * lidar_mask[name]
-                )
-
-            if "img" in self.equipment:
-                param = param + (
-                    img_model.state_dict()[name].to(lidar_mask[name].device)
-                    * img_mask[name]
-                )
-
-            if "gps" in self.equipment:
-                param = param + (
-                    gps_model.state_dict()[name].to(lidar_mask[name].device)
-                    * gps_mask[name]
-                )
-
-            joint_specific_encoder[name] = param
-
-        pruned_specific_encoder, pruned_specific_mask = one_shot_prune_to_param_limit(
-            joint_specific_encoder, size_limit_params - self.common_params
-        )
-
-        def apply_prune(mask_dict, prune_mask):
-            return {k: mask_dict[k] * prune_mask[k] for k in mask_dict}
-
-        pruned_masks = {}
-
-        for name, mask in {
-            "lidar": lidar_mask,
-            "img": img_mask,
-            "gps": gps_mask,
-        }.items():
-            pruned_masks[name] = apply_prune(mask, pruned_specific_mask)
 
         if "lidar" in self.equipment:
             self.lidar_model = lidar_model
-            self.cls__lidar_mask = pruned_masks["lidar"]
-            self.cls__previous_lidar_mask = pruned_masks["lidar"]
-            self.cls__transfer_lidar_mask = None
+            self.lidar_mask = lidar_mask
+            self.previous_lidar_mask = lidar_mask
+            self.transfer_lidar_mask = None
         else:
             self.lidar_model = None
-            self.cls__lidar_mask = None
-            self.cls__transfer_lidar_mask = None
+            self.lidar_mask = None
+            self.transfer_lidar_mask = None
         if "img" in self.equipment:
             self.img_model = img_model
-            self.cls__img_mask = pruned_masks["img"]
-            self.cls__previous_img_mask = pruned_masks["img"]
-            self.cls__transfer_img_mask = None
+            self.img_mask = img_mask
+            self.previous_img_mask = img_mask
+            self.transfer_img_mask = None
         else:
             self.img_model = None
-            self.cls__img_mask = None
-            self.cls__transfer_img_mask = None
+            self.img_mask = None
+            self.transfer_img_mask = None
         if "gps" in self.equipment:
             self.gps_model = gps_model
-            self.cls__gps_mask = pruned_masks["gps"]
-            self.cls__previous_gps_mask = pruned_masks["gps"]
-            self.cls__transfer_gps_mask = None
+            self.gps_mask = gps_mask
+            self.previous_gps_mask = gps_mask
+            self.transfer_gps_mask = None
         else:
             self.gps_model = None
-            self.cls__gps_mask = None
-            self.cls__transfer_gps_mask = None
+            self.gps_mask = None
+            self.transfer_gps_mask = None
         self.model_common = model_common
-        self.cls__model_common_mask = dict(
+        self.model_common_mask = dict(
             [
                 (name, torch.ones_like(param))
                 for name, param in model_common.named_parameters()
             ]
         )
-        self.cls__previous_common_mask = self.cls__model_common_mask
-        self.cls__transfer_model_common_mask = dict(
+        self.previous_common_mask = self.model_common_mask
+        self.transfer_model_common_mask = dict(
             [
                 (
                     (name, torch.zeros_like(param))
-                    if name not in self.cls__transfer_layer
+                    if name not in self.transfer_layer
                     else (name, torch.ones_like(param))
                 )
                 for name, param in model_common.named_parameters()
             ]
         )
-
-        # compute expected overhead
-        self.occupied_specific_params = 0
-
-        if "lidar" in self.equipment and pruned_masks.get("lidar") is not None:
-            self.occupied_specific_params += sum(
-                torch.count_nonzero(v) for k, v in pruned_masks["lidar"].items()
-            )
-
-        if "img" in self.equipment and pruned_masks.get("img") is not None:
-            self.occupied_specific_params += sum(
-                torch.count_nonzero(v) for k, v in pruned_masks["img"].items()
-            )
-
-        if "gps" in self.equipment and pruned_masks.get("gps") is not None:
-            self.occupied_specific_params += sum(
-                torch.count_nonzero(v) for k, v in pruned_masks["gps"].items()
-            )
-
-        self.transfer_overhead = [
-            x / 8 / (1024**2)
-            for x in (
-                16,  # delta accuracy
-                self.prediction_head_params * 16,  # updated parameters (16 bit),
-                self.max_specific_params
-                + self.common_params,  # retraining mask (1 bit)
-                # self.common_params
-                # - self.prediction_head_params
-                # + self.max_specific_params,  # non-updated parameters (frozen so 1 bit)
-            )
-        ]
-
-        self.overhead = [
-            x / 8 / (1024**2)
-            for x in (
-                16,  # delta accuracy
-                self.common_params * 16  # common params (trainable so 16 bit)
-                + self.occupied_specific_params
-                * 16,  # occupied specific params (trainable so 16 bit)
-                self.max_specific_params
-                + self.common_params,  # retraining mask (1 bit)
-                # + (self.max_specific_params - self.occupied_specific_params)
-                # * 1  # unoccupied specific params (frozen so 1 bit)
-            )
-        ]
-
-        self.avg_overhead = (
-            (self.common_params * 16 + self.max_specific_params * 16) / 8 / (1024**2)
-        )
-
-        print("abc")
 
     def save_model(self):
         temp_path = os.path.join(
@@ -525,29 +416,29 @@ class Client_pipeline:
 
     def get_mask(self, mode):
         if mode == "lidar":
-            if self.cls__transfer:
-                self.cls__previous_lidar_mask = self.cls__transfer_lidar_mask
-                return self.cls__transfer_lidar_mask
-            self.cls__previous_lidar_mask = self.cls__lidar_mask
-            return self.cls__lidar_mask
+            if self.transfer:
+                self.previous_lidar_mask = self.transfer_lidar_mask
+                return self.transfer_lidar_mask
+            self.previous_lidar_mask = self.lidar_mask
+            return self.lidar_mask
         elif mode == "img":
-            if self.cls__transfer:
-                self.cls__previous_img_mask = self.cls__transfer_img_mask
-                return self.cls__transfer_img_mask
-            self.cls__previous_img_mask = self.cls__img_mask
-            return self.cls__img_mask
+            if self.transfer:
+                self.previous_img_mask = self.transfer_img_mask
+                return self.transfer_img_mask
+            self.previous_img_mask = self.img_mask
+            return self.img_mask
         elif mode == "gps":
-            if self.cls__transfer:
-                self.cls__previous_gps_mask = self.cls__transfer_gps_mask
-                return self.cls__transfer_gps_mask
-            self.cls__previous_gps_mask = self.cls__gps_mask
-            return self.cls__gps_mask
+            if self.transfer:
+                self.previous_gps_mask = self.transfer_gps_mask
+                return self.transfer_gps_mask
+            self.previous_gps_mask = self.gps_mask
+            return self.gps_mask
         elif mode == "common":
-            if self.cls__transfer:
-                self.cls__previous_common_mask = self.cls__transfer_model_common_mask
-                return self.cls__transfer_model_common_mask
-            self.cls__previous_common_mask = self.cls__model_common_mask
-            return self.cls__model_common_mask
+            if self.transfer:
+                self.previous_common_mask = self.transfer_model_common_mask
+                return self.transfer_model_common_mask
+            self.previous_common_mask = self.model_common_mask
+            return self.model_common_mask
 
     def update_model(self, model_common_params, lidar_params, img_params, gps_params):
         temp_path = self.client_save_path
@@ -559,9 +450,9 @@ class Client_pipeline:
             )
             for name, W in self.model_common.named_parameters():
                 with torch.no_grad():
-                    W[self.cls__previous_common_mask[name].type(torch.bool)] = (
+                    W[self.previous_common_mask[name].type(torch.bool)] = (
                         model_common_params[name][
-                            self.cls__previous_common_mask[name].type(torch.bool)
+                            self.previous_common_mask[name].type(torch.bool)
                         ]
                     )
         except Exception:
@@ -575,12 +466,12 @@ class Client_pipeline:
                         os.path.join(temp_path, "lidar_model.pth"), weights_only=True
                     )
                 )
-                if self.cls__previous_lidar_mask is not None:
+                if self.previous_lidar_mask is not None:
                     for name, W in self.lidar_model.named_parameters():
                         with torch.no_grad():
-                            W[self.cls__previous_lidar_mask[name].type(torch.bool)] = (
+                            W[self.previous_lidar_mask[name].type(torch.bool)] = (
                                 lidar_params[name][
-                                    self.cls__previous_lidar_mask[name].type(torch.bool)
+                                    self.previous_lidar_mask[name].type(torch.bool)
                                 ]
                             )
             except Exception:
@@ -593,12 +484,12 @@ class Client_pipeline:
                         os.path.join(temp_path, "img_model.pth"), weights_only=True
                     )
                 )
-                if self.cls__previous_img_mask is not None:
+                if self.previous_img_mask is not None:
                     for name, W in self.img_model.named_parameters():
                         with torch.no_grad():
-                            W[self.cls__previous_img_mask[name].type(torch.bool)] = (
+                            W[self.previous_img_mask[name].type(torch.bool)] = (
                                 img_params[name][
-                                    self.cls__previous_img_mask[name].type(torch.bool)
+                                    self.previous_img_mask[name].type(torch.bool)
                                 ]
                             )
             except Exception:
@@ -611,12 +502,12 @@ class Client_pipeline:
                         os.path.join(temp_path, "gps_model.pth"), weights_only=True
                     )
                 )
-                if self.cls__previous_gps_mask is not None:
+                if self.previous_gps_mask is not None:
                     for name, W in self.gps_model.named_parameters():
                         with torch.no_grad():
-                            W[self.cls__previous_gps_mask[name].type(torch.bool)] = (
+                            W[self.previous_gps_mask[name].type(torch.bool)] = (
                                 gps_params[name][
-                                    self.cls__previous_gps_mask[name].type(torch.bool)
+                                    self.previous_gps_mask[name].type(torch.bool)
                                 ]
                             )
             except Exception:
@@ -631,29 +522,29 @@ class Client_pipeline:
             compined_params += list(self.img_model.parameters())
         if "gps" in self.equipment:
             compined_params += list(self.gps_model.parameters())
-        self.cls__optimizer = torch.optim.Adam(
+        self.optimizer = torch.optim.Adam(
             compined_params, self.args.lr, weight_decay=0.0003
         )
-        self.cls__criterion = torch.nn.CrossEntropyLoss()
-        self.cls__distribution_loss = torch.nn.L1Loss()
+        self.criterion = torch.nn.CrossEntropyLoss()
+        self.distribution_loss = torch.nn.L1Loss()
         epoch_milestones = [50, 75, 95, 115, 140, 165, 190, 220, 250, 280]
-        self.cls__scheduler = torch.optim.lr_scheduler.MultiStepLR(
-            self.cls__optimizer,
-            milestones=[i * len(self.cls__train_loader) for i in epoch_milestones],
+        self.scheduler = torch.optim.lr_scheduler.MultiStepLR(
+            self.optimizer,
+            milestones=[i * len(self.train_loader) for i in epoch_milestones],
             gamma=0.5,
         )
         """
         Set learning rate
         """
-        self.cls__scheduler = None
+        self.scheduler = None
         if self.args.lr_scheduler == "cosine":
-            self.cls__scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-                self.cls__optimizer,
-                T_max=self.args.epochs * len(self.cls__train_loader),
+            self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+                self.optimizer,
+                T_max=self.args.epochs * len(self.train_loader),
                 eta_min=4e-08,
             )
         elif self.args.lr_scheduler == "default":
-            # my learning rate self.cls__scheduler for cifar, following https://github.com/kuangliu/pytorch-cifar
+            # my learning rate self.scheduler for cifar, following https://github.com/kuangliu/pytorch-cifar
             # epoch_milestones = [65, 100, 130, 190, 220, 250, 280]
             epoch_milestones = [50, 75, 95, 115, 140, 165, 190, 220, 250, 280]
 
@@ -661,15 +552,15 @@ class Client_pipeline:
             Set the learning rate of each parameter task to the initial lr decayed
             by gamma once the number of epoch reaches one of the milestones
             """
-            self.cls__scheduler = torch.optim.lr_scheduler.MultiStepLR(
-                self.cls__optimizer,
-                milestones=[i * len(self.cls__train_loader) for i in epoch_milestones],
+            self.scheduler = torch.optim.lr_scheduler.MultiStepLR(
+                self.optimizer,
+                milestones=[i * len(self.train_loader) for i in epoch_milestones],
                 gamma=0.5,
             )
         else:
             # adjust learning rate
             lr = self.args.lr * (0.1 ** (self.args.epochs // 25))
-            for param_group in self.cls__optimizer.param_groups:
+            for param_group in self.optimizer.param_groups:
                 param_group["lr"] = lr
 
     def client_local_training(self, epochs, WRITER=None):
@@ -689,8 +580,8 @@ class Client_pipeline:
             losses = AverageMeter()
             top1 = AverageMeter()
             idx_loss_dict = {}
-            for i, (data, label) in enumerate(self.cls__train_loader):
-                self.cls__scheduler.step()
+            for i, (data, label) in enumerate(self.train_loader):
+                self.scheduler.step()
                 specific_features = torch.zeros((data.shape[0], 3, 64)).float().cuda()
                 _data = data.clone().float().cuda()
                 for m in [0, 1, 2]:
@@ -723,38 +614,36 @@ class Client_pipeline:
 
                 # TODO: Compute more loss functions, including cross entropy loss, similarity loss, and sparsity loss
                 shared_loss = (
-                    self.cls__distribution_loss(
+                    self.distribution_loss(
                         shared_features[0 : len(shared_features) + 1 : 3],
                         shared_features[1 : len(shared_features) + 1 : 3],
                     )
-                    + self.cls__distribution_loss(
+                    + self.distribution_loss(
                         shared_features[0 : len(shared_features) + 1 : 3],
                         shared_features[2 : len(shared_features) + 1 : 3],
                     )
-                    + self.cls__distribution_loss(
+                    + self.distribution_loss(
                         shared_features[1 : len(shared_features) + 1 : 3],
                         shared_features[2 : len(shared_features) + 1 : 3],
                     )
                 )
-                ce_loss = (
-                    self.cls__criterion(final_output, target[:, 0]) + 0.2 * shared_loss
-                )
+                ce_loss = self.criterion(final_output, target[:, 0]) + 0.2 * shared_loss
 
                 # measure accuracy and record loss
                 prec1, _ = accuracy(final_output, target, topk=(1, 5))
                 losses.update(ce_loss.item(), input.size(0))
                 top1.update(prec1[0], input.size(0))
-                self.cls__optimizer.zero_grad()
+                self.optimizer.zero_grad()
                 ce_loss.backward()
-                if (self.cls__lidar_mask is not None) and (not self.cls__transfer):
-                    freeze_weights(self.args, self.lidar_model, self.cls__lidar_mask)
-                if (self.cls__img_mask is not None) and (not self.cls__transfer):
-                    freeze_weights(self.args, self.img_model, self.cls__img_mask)
-                if (self.cls__gps_mask is not None) and (not self.cls__transfer):
-                    freeze_weights(self.args, self.gps_model, self.cls__gps_mask)
-                self.cls__optimizer.step()
+                if (self.lidar_mask is not None) and (not self.transfer):
+                    freeze_weights(self.args, self.lidar_model, self.lidar_mask)
+                if (self.img_mask is not None) and (not self.transfer):
+                    freeze_weights(self.args, self.img_model, self.img_mask)
+                if (self.gps_mask is not None) and (not self.transfer):
+                    freeze_weights(self.args, self.gps_model, self.gps_mask)
+                self.optimizer.step()
                 if i % 100 == 0:
-                    for param_group in self.cls__optimizer.param_groups:
+                    for param_group in self.optimizer.param_groups:
                         current_lr = param_group["lr"]
                     print(
                         "({0}) lr:[{1:.5f}]  "
@@ -765,7 +654,7 @@ class Client_pipeline:
                             current_lr,
                             epoch,
                             i,
-                            len(self.cls__train_loader),
+                            len(self.train_loader),
                             loss=losses,
                             top1=top1,
                         )
@@ -773,6 +662,10 @@ class Client_pipeline:
                 if i % 100 == 0:
                     idx_loss_dict[i] = losses.avg
 
+            if WRITER is not None:
+                WRITER.add_scalar(
+                    "Client_{}/train_loss".format(self.client_id), losses.avg, epoch
+                )
             # Validation
             val_batch_time = AverageMeter()
             val_top1 = AverageMeter()
@@ -786,7 +679,7 @@ class Client_pipeline:
             if "gps" in self.equipment:
                 self.gps_model.eval()
             end = time.time()
-            for i, (data, label) in enumerate(self.cls__val_loader):
+            for i, (data, label) in enumerate(self.val_loader):
                 specific_features = torch.zeros((data.shape[0], 3, 64)).float().cuda()
                 _data = data.clone().float().cuda()
                 for m in [0, 1, 2]:
@@ -837,7 +730,7 @@ class Client_pipeline:
         batch_time = AverageMeter()
         top1 = AverageMeter()
         end = time.time()
-        for i, (data, label) in enumerate(self.cls__test_loader):
+        for i, (data, label) in enumerate(self.test_loader):
             specific_features = torch.zeros((data.shape[0], 3, 64)).float().cuda()
             _data = data.clone().float().cuda()
             for m in [0, 1, 2]:

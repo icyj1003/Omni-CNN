@@ -357,6 +357,14 @@ def train_common_model(args, pipeline, train_common_loader, test_common_loader):
         for param_group in optimizer.param_groups:
             param_group["lr"] = lr
 
+    # create save path for each task
+    lidar_save_path = os.path.join(args.save_path_exp, "task" + str(0))
+    img_save_path = os.path.join(args.save_path_exp, "task" + str(1))
+    gps_save_path = os.path.join(args.save_path_exp, "task" + str(2))
+    check_and_create(lidar_save_path)
+    check_and_create(img_save_path)
+    check_and_create(gps_save_path)
+
     for epoch in range(args.epochs):
         start = time.time()
 
@@ -464,12 +472,6 @@ def train_common_model(args, pipeline, train_common_loader, test_common_loader):
                 model_common.state_dict(),
                 save_common_path + "/best_{}{}.pt".format(args.arch, args.depth),
             )
-            lidar_save_path = os.path.join(args.save_path_exp, "task" + str(0))
-            img_save_path = os.path.join(args.save_path_exp, "task" + str(1))
-            gps_save_path = os.path.join(args.save_path_exp, "task" + str(2))
-            check_and_create(lidar_save_path)
-            check_and_create(img_save_path)
-            check_and_create(gps_save_path)
             torch.save(
                 lidar_model.state_dict(),
                 lidar_save_path
@@ -510,6 +512,28 @@ def train_common_model(args, pipeline, train_common_loader, test_common_loader):
         gps_save_path + "/last_retrained_{}{}.pt".format(args.arch, args.depth),
     )
 
+    # load best
+    model_common.load_state_dict(
+        torch.load(save_common_path + "/best_{}{}.pt".format(args.arch, args.depth))
+    )
+    lidar_model.load_state_dict(
+        torch.load(
+            lidar_save_path + "/best_retrained_{}{}.pt".format(args.arch, args.depth)
+        )
+    )
+    img_model.load_state_dict(
+        torch.load(
+            img_save_path + "/best_retrained_{}{}.pt".format(args.arch, args.depth)
+        )
+    )
+    gps_model.load_state_dict(
+        torch.load(
+            gps_save_path + "/best_retrained_{}{}.pt".format(args.arch, args.depth)
+        )
+    )
+
+    return model_common, lidar_model, img_model, gps_model
+
 
 if __name__ == "__main__":
     """
@@ -527,9 +551,7 @@ if __name__ == "__main__":
     check_and_create(save_common_path)
     pipeline = CVTrainValTest(
         base_path=base_path,
-        save_path=save_path,
         base_common_path=base_common_path,
-        save_common_path=save_common_path,
     )
     if args.dataset == "cifar":
         train_loader = pipeline.load_data_cifar(args.batch_size)
@@ -628,24 +650,23 @@ if __name__ == "__main__":
         args, 0, common=True
     )  # if args.adaptive_mask import from masknet otherwise models/flash_net
     model_common.cuda()
-    print(model_common)
     # model_common.load_state_dict(
     #     torch.load(common_save_path + "/last_{}{}.pt".format(args.arch, args.depth))
     # )
-    # ## Start loading individual retrained models
-    # lidar_save_path = os.path.join(args.save_path_exp, "task" + str(0))
+    ## Start loading individual retrained models
+    lidar_save_path = os.path.join(args.save_path_exp, "task" + str(0))
     # lidar_model.load_state_dict(
     #     torch.load(
     #         lidar_save_path + "/last_retrained_{}{}.pt".format(args.arch, args.depth)
     #     )
     # )
-    # img_save_path = os.path.join(args.save_path_exp, "task" + str(1))
+    img_save_path = os.path.join(args.save_path_exp, "task" + str(1))
     # img_model.load_state_dict(
     #     torch.load(
     #         img_save_path + "/last_retrained_{}{}.pt".format(args.arch, args.depth)
     #     )
     # )
-    # gps_save_path = os.path.join(args.save_path_exp, "task" + str(2))
+    gps_save_path = os.path.join(args.save_path_exp, "task" + str(2))
     # gps_model.load_state_dict(
     #     torch.load(
     #         gps_save_path + "/last_retrained_{}{}.pt".format(args.arch, args.depth)
@@ -658,7 +679,7 @@ if __name__ == "__main__":
         print(
             "*************** Training Common Model on Centralized mode ***************"
         )
-        model_common = train_common_model(
+        model_common, lidar_model, img_model, gps_model = train_common_model(
             args, pipeline, train_common_loader, val_common_loader
         )
     elif args.learning_mode == "federated":
@@ -684,7 +705,6 @@ if __name__ == "__main__":
     #     args, 0, common=True
     # )  # if args.adaptive_mask import from masknet otherwise models/flash_net
     # model_common.cuda()
-    # print(model_common)
     # common_save_path = os.path.join(args.save_path_exp, "task_common")
     # model_common.load_state_dict(
     #     torch.load("experiments/LIG_S1/flash/Client_0/model_common.pt")
@@ -707,80 +727,80 @@ if __name__ == "__main__":
     # """
     # Testing the common model
     # """
-    all_acc = pipeline.validate_model(
-        args,
-        lidar_model,
-        img_model,
-        gps_model,
-        model_common,
-        test_common_loader,
-        [0, 1, 2],
-    )
+    # all_acc = pipeline.validate_model(
+    #     args,
+    #     lidar_model,
+    #     img_model,
+    #     gps_model,
+    #     model_common,
+    #     test_common_loader,
+    #     [0, 1, 2],
+    # )
 
-    acc_01 = pipeline.validate_model(
-        args,
-        lidar_model,
-        img_model,
-        gps_model,
-        model_common,
-        test_common_loader,
-        [0, 1],
-    )
-    acc_02 = pipeline.validate_model(
-        args,
-        lidar_model,
-        img_model,
-        gps_model,
-        model_common,
-        test_common_loader,
-        [0, 2],
-    )
-    acc_12 = pipeline.validate_model(
-        args,
-        lidar_model,
-        img_model,
-        gps_model,
-        model_common,
-        test_common_loader,
-        [1, 2],
-    )
-    acc_0 = pipeline.validate_model(
-        args,
-        lidar_model,
-        img_model,
-        gps_model,
-        model_common,
-        test_common_loader,
-        [0],
-    )
-    acc_1 = pipeline.validate_model(
-        args,
-        lidar_model,
-        img_model,
-        gps_model,
-        model_common,
-        test_common_loader,
-        [1],
-    )
-    acc_2 = pipeline.validate_model(
-        args,
-        lidar_model,
-        img_model,
-        gps_model,
-        model_common,
-        test_common_loader,
-        [2],
-    )
+    # acc_01 = pipeline.validate_model(
+    #     args,
+    #     lidar_model,
+    #     img_model,
+    #     gps_model,
+    #     model_common,
+    #     test_common_loader,
+    #     [0, 1],
+    # )
+    # acc_02 = pipeline.validate_model(
+    #     args,
+    #     lidar_model,
+    #     img_model,
+    #     gps_model,
+    #     model_common,
+    #     test_common_loader,
+    #     [0, 2],
+    # )
+    # acc_12 = pipeline.validate_model(
+    #     args,
+    #     lidar_model,
+    #     img_model,
+    #     gps_model,
+    #     model_common,
+    #     test_common_loader,
+    #     [1, 2],
+    # )
+    # acc_0 = pipeline.validate_model(
+    #     args,
+    #     lidar_model,
+    #     img_model,
+    #     gps_model,
+    #     model_common,
+    #     test_common_loader,
+    #     [0],
+    # )
+    # acc_1 = pipeline.validate_model(
+    #     args,
+    #     lidar_model,
+    #     img_model,
+    #     gps_model,
+    #     model_common,
+    #     test_common_loader,
+    #     [1],
+    # )
+    # acc_2 = pipeline.validate_model(
+    #     args,
+    #     lidar_model,
+    #     img_model,
+    #     gps_model,
+    #     model_common,
+    #     test_common_loader,
+    #     [2],
+    # )
 
-    results = {
-        "acc_all": all_acc.item(),
-        "acc_01": acc_01.item(),
-        "acc_02": acc_02.item(),
-        "acc_12": acc_12.item(),
-        "acc_0": acc_0.item(),
-        "acc_1": acc_1.item(),
-        "acc_2": acc_2.item(),
-    }
+    # results = {
+    #     "acc_all": all_acc.item(),
+    #     "acc_01": acc_01.item(),
+    #     "acc_02": acc_02.item(),
+    #     "acc_12": acc_12.item(),
+    #     "acc_0": acc_0.item(),
+    #     "acc_1": acc_1.item(),
+    #     "acc_2": acc_2.item(),
+    # }
 
-    with open(os.path.join(args.save_path, name, "results.json"), "w") as f:
-        json.dump(results, f)
+    # with open(os.path.join(args.save_path, name, "results.json"), "w") as f:
+    #     json.dump(results, f)

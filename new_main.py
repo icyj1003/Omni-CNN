@@ -28,27 +28,6 @@ from torch.utils.tensorboard import SummaryWriter
 
 np.set_printoptions(threshold=False)
 
-
-# python main.py --dataset cifar --exp_name cifar --base_path /home/batool/LPSforLifelong/datasets/cifar/ --save_path /home/batool/LPSforLifelong/datasets/ --arch cifarnet --depth 10 --tasks 3 --epochs 5 --sparsity-type irregular  --epochs-prune 2 --epochs-mask-retrain 3
-# python main.py --dataset flash --exp_name flash --base_path /home/batool/flash_LPSforLifelong/datasets/flash/ --save_path /home/batool/flash_LPSforLifelong/datasets/ --arch flashnet --depth 10 --tasks 3 --epochs 5 --sparsity-type irregular  --epochs-prune 2 --epochs-mask-retrain 3
-# CUDA_VISIBLE_DEVICES=2 python main.py --dataset flash --exp_name flash --base_path /home/salehihikoueib/flash_LPSforLifelong/datasets/flash/ --save_path /home/salehihikoueib/flash_LPSforLifelong/experiments/testing/ --load-model '' --load-model-pruned '' --classes 64  --sparsity-type irregular --epochs 3 --epochs-prune 3 --epochs-mask-retrain 3 --admm-epochs 1 --mask-admm-epochs 3  --rho 0.01  --mixup --alpha 0 --smooth --smooth-eps 0.1 --config-setting 3,5,2 --adaptive-mask False --adaptive-ratio 0 --arch flashnet --depth 10 --tasks 3
-def str2bool(v):
-    if v.lower() in ("yes", "true", "t", "y", "1"):
-        return True
-    elif v.lower() in ("no", "false", "f", "n", "0"):
-        return False
-    else:
-        raise argparse.ArgumentTypeError("Boolean value expected.")
-
-
-def check_and_create(dir_path):
-    if os.path.exists(dir_path):
-        return True
-    else:
-        os.makedirs(dir_path)
-        return False
-
-
 # Training settings
 parser = argparse.ArgumentParser(description="PyTorch CIFAR10 admm training")
 parser.add_argument(
@@ -1307,9 +1286,7 @@ if __name__ == "__main__":
         check_and_create(save_common_path)
         pipeline = CVTrainValTest(
             base_path=base_path,
-            save_path=save_path,
             base_common_path=base_common_path,
-            save_common_path=save_common_path,
         )
 
         if args.dataset == "cifar":
