@@ -175,52 +175,63 @@ def one_shot_prune_to_size(
 
 def one_shot_prune_to_param_limit(
     state_dict,
-    max_params: float,
+    mask_dict,  # dict with same keys, values in {0,1}
+    ratio: float,
 ):
+    all_active_params = []
 
-    # 2. Flatten all parameters (absolute values) in a single 1D tensor.
-    all_params = []
-    for param in state_dict.values():
+    # 1. Collect ONLY active parameters
+    for key, param in state_dict.items():
         if isinstance(param, torch.Tensor) and torch.is_floating_point(param):
-            all_params.append(
-                param.detach().to(device="cpu", dtype=torch.float32).reshape(-1)
-            )
+            mask = mask_dict[key].to(device=param.device, dtype=torch.bool)
 
-    if not all_params:
-        raise ValueError("No floating-point tensors found in the state_dict.")
+            active_values = param.detach()[mask]  # ONLY active params
+            if active_values.numel() > 0:
+                all_active_params.append(
+                    active_values.to(device="cpu", dtype=torch.float32)
+                )
 
-    all_params = torch.cat(all_params, dim=0)
-    abs_values = all_params.abs()
-    total_num_params = abs_values.numel()
+    if not all_active_params:
+        raise ValueError("No active floating-point tensors found.")
 
-    # 3. Compute how many parameters we can keep non-zero to fit within max_params.
-    max_nonzero_params = int(min(max_params, total_num_params))
+    all_active_params = torch.cat(all_active_params, dim=0)
+    abs_values = all_active_params.abs()
+    total_active = abs_values.numel()
 
-    # 4. Determine the threshold.
-    if max_nonzero_params == 0:
-        # We must set everything to zero
+    # 2. Compute how many active params to KEEP
+    num_keep = int((1 - ratio) * total_active)
+
+    # 3. Threshold
+    if num_keep <= 0:
         threshold = float("inf")
-    elif max_nonzero_params == total_num_params:
-        # We can keep everything
+    elif num_keep >= total_active:
         threshold = 0.0
     else:
-        # Sort in descending order to find the value at the (max_nonzero_params)-th position
-        sorted_values, _ = torch.sort(abs_values, descending=True)
-        threshold = sorted_values[max_nonzero_params - 1].item()
+        sorted_vals, _ = torch.sort(abs_values, descending=True)
+        threshold = sorted_vals[num_keep - 1].item()
 
-    # 5. Prune parameters
+    # 4. Apply pruning ONLY on active params
     pruned_state_dict = {}
     pruning_mask_dict = {}
+
     for key, param in state_dict.items():
         if isinstance(param, torch.Tensor):
             pruned_param = param.clone()
-            # Create a mask: 1 where |value| >= threshold, 0 otherwise
-            mask = pruned_param.abs() >= threshold
-            # Zero out values below threshold
-            pruned_param[~mask] = 0
+
+            original_mask = mask_dict[key].to(device=param.device, dtype=torch.bool)
+
+            # Eligible for pruning: active AND below threshold
+            prune_mask = (pruned_param.abs() < threshold) & original_mask
+
+            # New mask: deactivate pruned weights
+            new_mask = original_mask.clone()
+            new_mask[prune_mask] = False
+
+            # Apply pruning
+            pruned_param[prune_mask] = 0
 
             pruned_state_dict[key] = pruned_param
-            pruning_mask_dict[key] = mask
+            pruning_mask_dict[key] = new_mask
         else:
             pruned_state_dict[key] = param
 

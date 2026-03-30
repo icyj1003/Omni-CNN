@@ -340,6 +340,63 @@ class Client_pipeline:
         gps_mask=None,
         size_limit_params=None,
     ):
+        # model_common_mask = dict(
+        #     [
+        #         (name, torch.ones_like(param))
+        #         for name, param in model_common.named_parameters()
+        #     ]
+        # )
+        # # compute number of non-zero parameters in the mask
+        # if size_limit_params is not None:
+        #     total_params = self.param_counts(
+        #         model_common, lidar_mask, img_mask, gps_mask
+        #     )
+        #     print(f"Total parameters in the model: {total_params}")
+
+        #     if False or total_params > size_limit_params:
+        #         print(
+        #             f"Total parameters {total_params} exceed the size limit {size_limit_params}. Pruning the model..."
+        #         )
+        #         # exceed ratio
+        #         exceed_ratio = (total_params - size_limit_params) / total_params
+        #         print(f"Exceed ratio: {exceed_ratio:.4f}")
+
+        #         model_list = [model_common, lidar_model, img_model, gps_model]
+        #         mask_list = [model_common_mask, lidar_mask, img_mask, gps_mask]
+
+        #         for idx, (model, mask) in enumerate(zip(model_list, mask_list)):
+        #             if mask is not None and model is not None:
+        #                 # prune the model by setting the smallest magnitude weights to zero
+        #                 new_state_dict, new_mask = one_shot_prune_to_param_limit(
+        #                     model.state_dict(),
+        #                     mask,
+        #                     exceed_ratio,
+        #                 )
+        #                 model_list[idx].load_state_dict(new_state_dict)
+        #                 mask_list[idx] = new_mask
+
+        #         pruned_lidar_mask = mask_list[1]
+        #         pruned_img_mask = mask_list[2]
+        #         pruned_gps_mask = mask_list[3]
+        #         pruned_model_common_mask = mask_list[0]
+
+        #         pruned_lidar_model = model_list[1]
+        #         pruned_img_model = model_list[2]
+        #         pruned_gps_model = model_list[3]
+        #         pruned_model_common = model_list[0]
+
+        #         # after pruning, compute the new total parameters
+        #         total_params = self.param_counts(
+        #             pruned_model_common,
+        #             pruned_lidar_mask,
+        #             pruned_img_mask,
+        #             pruned_gps_mask,
+        #         )
+        #         print(f"Total parameters after pruning: {total_params}")
+        #     else:
+        #         print(
+        #             f"Total parameters {total_params} are within the size limit {size_limit_params}. No pruning needed."
+        #         )
 
         if "lidar" in self.equipment:
             self.lidar_model = lidar_model
@@ -386,6 +443,13 @@ class Client_pipeline:
                 for name, param in model_common.named_parameters()
             ]
         )
+
+    def param_counts(self, model_common, lidar_mask, img_mask, gps_mask):
+        total_params = sum([v.numel() for v in model_common.state_dict().values()])
+        for mask in [lidar_mask, img_mask, gps_mask]:
+            if mask is not None:
+                total_params += sum([v.sum().item() for v in mask.values()])
+        return total_params
 
     def save_model(self):
         temp_path = os.path.join(
@@ -522,7 +586,7 @@ class Client_pipeline:
             compined_params += list(self.img_model.parameters())
         if "gps" in self.equipment:
             compined_params += list(self.gps_model.parameters())
-        self.optimizer = torch.optim.Adam(
+        self.optimizer = torch.optim.SGD(
             compined_params, self.args.lr, weight_decay=0.0003
         )
         self.criterion = torch.nn.CrossEntropyLoss()
@@ -540,11 +604,11 @@ class Client_pipeline:
         if self.args.lr_scheduler == "cosine":
             self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
                 self.optimizer,
-                T_max=self.args.epochs * len(self.train_loader),
+                T_max=self.args.epochs * len(self.__train_loader),
                 eta_min=4e-08,
             )
         elif self.args.lr_scheduler == "default":
-            # my learning rate self.scheduler for cifar, following https://github.com/kuangliu/pytorch-cifar
+            # my learning rate self.__scheduler for cifar, following https://github.com/kuangliu/pytorch-cifar
             # epoch_milestones = [65, 100, 130, 190, 220, 250, 280]
             epoch_milestones = [50, 75, 95, 115, 140, 165, 190, 220, 250, 280]
 
@@ -563,7 +627,7 @@ class Client_pipeline:
             for param_group in self.optimizer.param_groups:
                 param_group["lr"] = lr
 
-    def client_local_training(self, epochs, WRITER=None):
+    def client_local_training(self, epochs, WRITER=None, round=None):
         self.model_common.train()
         if "lidar" in self.equipment:
             self.lidar_model.train()
@@ -578,6 +642,8 @@ class Client_pipeline:
             )
             # print('train func params',self.args, model, masks)
             losses = AverageMeter()
+            loss_1 = AverageMeter()
+            loss_2 = AverageMeter()
             top1 = AverageMeter()
             idx_loss_dict = {}
             for i, (data, label) in enumerate(self.train_loader):
@@ -627,14 +693,16 @@ class Client_pipeline:
                         shared_features[2 : len(shared_features) + 1 : 3],
                     )
                 )
-                ce_loss = self.criterion(final_output, target[:, 0]) + 0.2 * shared_loss
-
+                loss_1.update(shared_loss.item(), input.size(0))
+                ce = self.criterion(final_output, target[:, 0])
+                loss_2.update(ce.item(), input.size(0))
+                total_loss = ce + 0.2 * shared_loss
                 # measure accuracy and record loss
                 prec1, _ = accuracy(final_output, target, topk=(1, 5))
-                losses.update(ce_loss.item(), input.size(0))
+                losses.update(total_loss.item(), input.size(0))
                 top1.update(prec1[0], input.size(0))
                 self.optimizer.zero_grad()
-                ce_loss.backward()
+                total_loss.backward()
                 if (self.lidar_mask is not None) and (not self.transfer):
                     freeze_weights(self.args, self.lidar_model, self.lidar_mask)
                 if (self.img_mask is not None) and (not self.transfer):
@@ -664,7 +732,9 @@ class Client_pipeline:
 
             if WRITER is not None:
                 WRITER.add_scalar(
-                    "Client_{}/train_loss".format(self.client_id), losses.avg, epoch
+                    "Client_{}/train_loss".format(self.client_id),
+                    losses.avg,
+                    round * epochs + epoch,
                 )
             # Validation
             val_batch_time = AverageMeter()

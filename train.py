@@ -571,7 +571,6 @@ if __name__ == "__main__":
         args, 0
     )  # if args.adaptive_mask import from masknet otherwise models/flash_net
     cummu_model.cuda()
-    print(cummu_model)
 
     args = load_layer_config(args, cummu_model, 0)
 
@@ -608,9 +607,9 @@ if __name__ == "__main__":
     Loading common model
     """
     common_save_path = os.path.join(args.save_path_exp, "task_common")
-    # model_common.load_state_dict(
-    #     torch.load(common_save_path + "/last_{}{}.pt".format(args.arch, args.depth))
-    # )
+    model_common.load_state_dict(
+        torch.load(common_save_path + "/last_{}{}.pt".format(args.arch, args.depth))
+    )
     print("*************** Testing ***************")
     cummu_model.load_state_dict(torch.load(args.load_cummu_model))
     lidar_prec1 = pipeline.test_model(
@@ -654,19 +653,19 @@ if __name__ == "__main__":
     #     torch.load(common_save_path + "/last_{}{}.pt".format(args.arch, args.depth))
     # )
     ## Start loading individual retrained models
-    lidar_save_path = os.path.join(args.save_path_exp, "task" + str(0))
+    # lidar_save_path = os.path.join(args.save_path_exp, "task" + str(0))
     # lidar_model.load_state_dict(
     #     torch.load(
     #         lidar_save_path + "/last_retrained_{}{}.pt".format(args.arch, args.depth)
     #     )
     # )
-    img_save_path = os.path.join(args.save_path_exp, "task" + str(1))
+    # img_save_path = os.path.join(args.save_path_exp, "task" + str(1))
     # img_model.load_state_dict(
     #     torch.load(
     #         img_save_path + "/last_retrained_{}{}.pt".format(args.arch, args.depth)
     #     )
     # )
-    gps_save_path = os.path.join(args.save_path_exp, "task" + str(2))
+    # gps_save_path = os.path.join(args.save_path_exp, "task" + str(2))
     # gps_model.load_state_dict(
     #     torch.load(
     #         gps_save_path + "/last_retrained_{}{}.pt".format(args.arch, args.depth)
@@ -694,6 +693,8 @@ if __name__ == "__main__":
             gps_model,
             gps_mask,
             WRITER,
+            pipeline,
+            test_common_loader,
         )
     else:
         raise Exception("Learning mode not supported")
