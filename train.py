@@ -470,7 +470,8 @@ def train_common_model(args, pipeline, train_common_loader, test_common_loader):
             check_and_create(save_common_path)
             torch.save(
                 model_common.state_dict(),
-                save_common_path + "/best_{}{}.pt".format(args.arch, args.depth),
+                save_common_path
+                + "/best_retrained_{}{}.pt".format(args.arch, args.depth),
             )
             torch.save(
                 lidar_model.state_dict(),
@@ -491,7 +492,7 @@ def train_common_model(args, pipeline, train_common_loader, test_common_loader):
     check_and_create(save_common_path)
     torch.save(
         model_common.state_dict(),
-        save_common_path + "/last_{}{}.pt".format(args.arch, args.depth),
+        save_common_path + "/last_retrained_{}{}.pt".format(args.arch, args.depth),
     )
     lidar_save_path = os.path.join(args.save_path_exp, "task" + str(0))
     img_save_path = os.path.join(args.save_path_exp, "task" + str(1))
@@ -514,7 +515,9 @@ def train_common_model(args, pipeline, train_common_loader, test_common_loader):
 
     # load best
     model_common.load_state_dict(
-        torch.load(save_common_path + "/best_{}{}.pt".format(args.arch, args.depth))
+        torch.load(
+            save_common_path + "/best_retrained_{}{}.pt".format(args.arch, args.depth)
+        )
     )
     lidar_model.load_state_dict(
         torch.load(
@@ -603,42 +606,36 @@ if __name__ == "__main__":
         args, 0, common=True
     )  # if args.adaptive_mask import from masknet otherwise models/flash_net
     model_common.cuda()
-    """
-    Loading common model
-    """
-    common_save_path = os.path.join(args.save_path_exp, "task_common")
     # model_common.load_state_dict(
     #     torch.load(common_save_path + "/last_{}{}.pt".format(args.arch, args.depth))
     # )
-    print("*************** Testing ***************")
     # cummu_model.load_state_dict(torch.load(args.load_cummu_model))
-    lidar_prec1 = pipeline.test_model(
-        args,
-        0,
-        cummu_model,
-        model_common,
-        val_common_loader,
-        lidar_mask,
-    )
     lidar_model = copy.deepcopy(cummu_model)
-    img_prec1 = pipeline.test_model(
-        args,
-        1,
-        cummu_model,
-        model_common,
-        val_common_loader,
-        img_mask,
-    )
     img_model = copy.deepcopy(cummu_model)
-    gps_prec1 = pipeline.test_model(
-        args,
-        2,
-        cummu_model,
-        model_common,
-        val_common_loader,
-        gps_mask,
-    )
     gps_model = copy.deepcopy(cummu_model)
+    lidar_save_path = os.path.join(args.save_path_exp, "task" + str(0))
+    img_save_path = os.path.join(args.save_path_exp, "task" + str(1))
+    gps_save_path = os.path.join(args.save_path_exp, "task" + str(2))
+    common_save_path = os.path.join(args.save_path_exp, "task_common")
+
+    # model_common.load_state_dict(
+    #     torch.load(common_save_path + "/last_{}{}.pt".format(args.arch, args.depth))
+    # )
+    # lidar_model.load_state_dict(
+    #     torch.load(
+    #         lidar_save_path + "/last_retrained_{}{}.pt".format(args.arch, args.depth)
+    #     )
+    # )
+    # img_model.load_state_dict(
+    #     torch.load(
+    #         img_save_path + "/last_retrained_{}{}.pt".format(args.arch, args.depth)
+    #     )
+    # )
+    # gps_model.load_state_dict(
+    #     torch.load(
+    #         gps_save_path + "/last_retrained_{}{}.pt".format(args.arch, args.depth)
+    #     )
+    # )
 
     if id(cummu_model) == id(model_common):
         raise Exception("cummu_model and model_common are the same object")

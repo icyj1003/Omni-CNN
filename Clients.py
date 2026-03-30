@@ -347,140 +347,114 @@ class Client_pipeline:
             ]
         )
         # compute number of non-zero parameters in the mask
-        if size_limit_params is not None:
-            current_total_params = self.param_counts(
-                model_common, lidar_mask, img_mask, gps_mask
+        current_total_params = self.param_counts(
+            model_common, lidar_mask, img_mask, gps_mask
+        )
+        print(f"Total parameters in the model: {current_total_params}")
+
+        if size_limit_params is not None and current_total_params > size_limit_params:
+            print(
+                f"Total parameters {current_total_params} exceed the size limit {size_limit_params}. Pruning the model..."
             )
-            print(f"Total parameters in the model: {current_total_params}")
+            # exceed ratio
+            exceed_ratio = (
+                current_total_params - size_limit_params
+            ) / current_total_params
+            print(f"Exceed ratio: {exceed_ratio:.4f}")
 
-            if current_total_params > size_limit_params:
-                print(
-                    f"Total parameters {current_total_params} exceed the size limit {size_limit_params}. Pruning the model..."
-                )
-                # exceed ratio
-                exceed_ratio = (
-                    current_total_params - size_limit_params
-                ) / current_total_params
-                print(f"Exceed ratio: {exceed_ratio:.4f}")
+            # prune the common model
+            common_state_dict = model_common.state_dict()
+            new_common_state_dict, model_common_mask = one_shot_prune_to_param_limit(
+                common_state_dict, model_common_mask, exceed_ratio
+            )
+            model_common.load_state_dict(new_common_state_dict)
 
-                def align_state_dict_to_model(state_dict, mask, model):
-                    aligned_state_dict = {}
-                    for name, param in model.named_parameters():
-                        if name in state_dict:
-                            aligned_state_dict[name] = state_dict[name] * mask[name]
-                    model.load_state_dict(aligned_state_dict)
-                    return model, mask
-
-                # prune the common model
-                common_state_dict = model_common.state_dict()
-                model_common, model_common_mask = align_state_dict_to_model(
-                    *(
-                        one_shot_prune_to_param_limit(
-                            common_state_dict, model_common_mask, exceed_ratio
-                        )
-                    ),
-                    model_common,
-                )
-
-                # prune the modal-specific models
-                for equipment in self.equipment:
-                    if (
-                        equipment == "lidar"
-                        and lidar_model is not None
-                        and lidar_mask is not None
-                    ):
-                        lidar_model, lidar_mask = align_state_dict_to_model(
-                            *(
-                                one_shot_prune_to_param_limit(
-                                    lidar_model.state_dict(),
-                                    lidar_mask,
-                                    exceed_ratio,
-                                )
-                            ),
-                            lidar_model,
-                        )
-                    elif (
-                        equipment == "img"
-                        and img_model is not None
-                        and img_mask is not None
-                    ):
-                        img_model, img_mask = align_state_dict_to_model(
-                            *(
-                                one_shot_prune_to_param_limit(
-                                    img_model.state_dict(), img_mask, exceed_ratio
-                                )
-                            ),
-                            img_model,
-                        )
-                    elif (
-                        equipment == "gps"
-                        and gps_model is not None
-                        and gps_mask is not None
-                    ):
-                        gps_model, gps_mask = align_state_dict_to_model(
-                            *(
-                                one_shot_prune_to_param_limit(
-                                    gps_model.state_dict(), gps_mask, exceed_ratio
-                                )
-                            ),
-                            gps_model,
-                        )
-
-                # after pruning, compute the new total parameters
-                new_total_params = self.param_counts(
-                    model_common,
-                    lidar_mask,
-                    img_mask,
-                    gps_mask,
-                )
-                print(
-                    f"Total parameters after pruning: {new_total_params}, ratio pruned: {(1 - (new_total_params / current_total_params)):.4f}/{exceed_ratio:.4f}"
-                )
-            else:
-                print(
-                    f"Total parameters {current_total_params} are within the size limit {size_limit_params}. No pruning needed."
-                )
-
-            if "lidar" in self.equipment:
-                self.lidar_model = lidar_model
-                self.lidar_mask = lidar_mask
-                self.previous_lidar_mask = lidar_mask
-                self.transfer_lidar_mask = None
-            else:
-                self.lidar_model = None
-                self.lidar_mask = None
-                self.transfer_lidar_mask = None
-            if "img" in self.equipment:
-                self.img_model = img_model
-                self.img_mask = img_mask
-                self.previous_img_mask = img_mask
-                self.transfer_img_mask = None
-            else:
-                self.img_model = None
-                self.img_mask = None
-                self.transfer_img_mask = None
-            if "gps" in self.equipment:
-                self.gps_model = gps_model
-                self.gps_mask = gps_mask
-                self.previous_gps_mask = gps_mask
-                self.transfer_gps_mask = None
-            else:
-                self.gps_model = None
-                self.gps_mask = None
-                self.transfer_gps_mask = None
-            self.model_common = model_common
-            self.model_common_mask = model_common_mask
-            self.previous_common_mask = self.model_common_mask
-            self.transfer_model_common_mask = dict(
-                [
-                    (
-                        (name, torch.zeros_like(param))
-                        if name not in self.transfer_layer
-                        else (name, self.model_common_mask[name])
+            # prune the modal-specific models
+            for equipment in self.equipment:
+                if (
+                    equipment == "lidar"
+                    and lidar_model is not None
+                    and lidar_mask is not None
+                ):
+                    lidar_state_dict = lidar_model.state_dict()
+                    new_lidar_state_dict, lidar_mask = one_shot_prune_to_param_limit(
+                        lidar_state_dict, lidar_mask, exceed_ratio
                     )
-                    for name, param in model_common.named_parameters()
-                ]
+                    lidar_model.load_state_dict(new_lidar_state_dict)
+                elif (
+                    equipment == "img"
+                    and img_model is not None
+                    and img_mask is not None
+                ):
+                    img_state_dict = img_model.state_dict()
+                    new_img_state_dict, img_mask = one_shot_prune_to_param_limit(
+                        img_state_dict, img_mask, exceed_ratio
+                    )
+                    img_model.load_state_dict(new_img_state_dict)
+                elif (
+                    equipment == "gps"
+                    and gps_model is not None
+                    and gps_mask is not None
+                ):
+                    gps_state_dict = gps_model.state_dict()
+                    new_gps_state_dict, gps_mask = one_shot_prune_to_param_limit(
+                        gps_state_dict, gps_mask, exceed_ratio
+                    )
+                    gps_model.load_state_dict(new_gps_state_dict)
+
+            # after pruning, compute the new total parameters
+            new_total_params = self.param_counts(
+                model_common,
+                lidar_mask,
+                img_mask,
+                gps_mask,
             )
+            print(
+                f"Total parameters after pruning: {new_total_params}, ratio pruned: {(1 - (new_total_params / current_total_params)):.4f}/{exceed_ratio:.4f}"
+            )
+        else:
+            print(f"No pruning needed.")
+
+        if "lidar" in self.equipment:
+            self.lidar_model = lidar_model
+            self.lidar_mask = lidar_mask
+            self.previous_lidar_mask = lidar_mask
+            self.transfer_lidar_mask = None
+        else:
+            self.lidar_model = None
+            self.lidar_mask = None
+            self.transfer_lidar_mask = None
+        if "img" in self.equipment:
+            self.img_model = img_model
+            self.img_mask = img_mask
+            self.previous_img_mask = img_mask
+            self.transfer_img_mask = None
+        else:
+            self.img_model = None
+            self.img_mask = None
+            self.transfer_img_mask = None
+        if "gps" in self.equipment:
+            self.gps_model = gps_model
+            self.gps_mask = gps_mask
+            self.previous_gps_mask = gps_mask
+            self.transfer_gps_mask = None
+        else:
+            self.gps_model = None
+            self.gps_mask = None
+            self.transfer_gps_mask = None
+        self.model_common = model_common
+        self.model_common_mask = model_common_mask
+        self.previous_common_mask = self.model_common_mask
+        self.transfer_model_common_mask = dict(
+            [
+                (
+                    (name, torch.zeros_like(param))
+                    if name not in self.transfer_layer
+                    else (name, self.model_common_mask[name])
+                )
+                for name, param in model_common.named_parameters()
+            ]
+        )
 
     def param_counts(self, model_common, lidar_mask, img_mask, gps_mask):
         total_params = torch.count_nonzero(
@@ -637,7 +611,7 @@ class Client_pipeline:
             compined_params += list(self.img_model.parameters())
         if "gps" in self.equipment:
             compined_params += list(self.gps_model.parameters())
-        self.optimizer = torch.optim.SGD(
+        self.optimizer = torch.optim.Adam(
             compined_params, self.args.lr, weight_decay=0.0003
         )
         self.criterion = torch.nn.CrossEntropyLoss()

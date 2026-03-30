@@ -353,49 +353,51 @@ def federated_train(
         WRITER.add_scalar("AverageAccuracy", top1.avg, i + 1)
         WRITER.add_scalar("AverageInferenceAccuracy", top1_infer.avg, i + 1)
 
-        for name, param in model_common_new_params.items():
-            model_common_new_params[name] = safe_elementwise_division(
-                param, cummulative_common_mask[name]
-            )
-        for name, param in lidar_model_new_params.items():
-            try:
-                if torch.sum(param) != 0:
-                    print("updating lidar model")
-                    lidar_model_new_params[name] = safe_elementwise_division(
-                        param, cummulative_lidar_mask[name]
-                    )
-                else:
-                    print("not updating lidar model")
+        if args.use_tfed:
+            # aggregate global model parameters
+            for name, param in model_common_new_params.items():
+                model_common_new_params[name] = safe_elementwise_division(
+                    param, cummulative_common_mask[name]
+                )
+            for name, param in lidar_model_new_params.items():
+                try:
+                    if torch.sum(param) != 0:
+                        print("updating lidar model")
+                        lidar_model_new_params[name] = safe_elementwise_division(
+                            param, cummulative_lidar_mask[name]
+                        )
+                    else:
+                        print("not updating lidar model")
+                        lidar_model_new_params[name] = lidar_model_curr_params[name]
+                except Exception:
+                    print(f"Checking lidar model param: {param} so not updating")
                     lidar_model_new_params[name] = lidar_model_curr_params[name]
-            except Exception:
-                print(f"Checking lidar model param: {param} so not updating")
-                lidar_model_new_params[name] = lidar_model_curr_params[name]
-        for name, param in img_model_new_params.items():
-            try:
-                if torch.sum(param) != 0:
-                    print("updating img model")
-                    img_model_new_params[name] = safe_elementwise_division(
-                        param, cummulative_img_mask[name]
-                    )
-                else:
-                    print("not updating img model")
+            for name, param in img_model_new_params.items():
+                try:
+                    if torch.sum(param) != 0:
+                        print("updating img model")
+                        img_model_new_params[name] = safe_elementwise_division(
+                            param, cummulative_img_mask[name]
+                        )
+                    else:
+                        print("not updating img model")
+                        img_model_new_params[name] = img_model_curr_params[name]
+                except Exception:
+                    print(f"Checking img model param: {param} so not updating")
                     img_model_new_params[name] = img_model_curr_params[name]
-            except Exception:
-                print(f"Checking img model param: {param} so not updating")
-                img_model_new_params[name] = img_model_curr_params[name]
-        for name, param in gps_model_new_params.items():
-            try:
-                if torch.sum(param) != 0:  #
-                    print("updating gps model")
-                    gps_model_new_params[name] = safe_elementwise_division(
-                        param, cummulative_gps_mask[name]
-                    )
-                else:
-                    print("not updating gps model")
+            for name, param in gps_model_new_params.items():
+                try:
+                    if torch.sum(param) != 0:  #
+                        print("updating gps model")
+                        gps_model_new_params[name] = safe_elementwise_division(
+                            param, cummulative_gps_mask[name]
+                        )
+                    else:
+                        print("not updating gps model")
+                        gps_model_new_params[name] = gps_model_curr_params[name]
+                except Exception:
+                    print(f"Checking gps model param: {param} so not updating")
                     gps_model_new_params[name] = gps_model_curr_params[name]
-            except Exception:
-                print(f"Checking gps model param: {param} so not updating")
-                gps_model_new_params[name] = gps_model_curr_params[name]
 
         print("Server is updating...")
 
@@ -415,7 +417,7 @@ def federated_train(
         # )
         # WRITER.add_scalar("GlobalModel/Accuracy", prec_all, i + 1)
 
-    for client in list_of_clients:
-        client.save_model()
+    # for client in list_of_clients:
+    #     client.save_model()
 
     return model_common, lidar_model, img_model, gps_model
