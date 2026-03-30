@@ -145,8 +145,9 @@ def federated_train(
     lidar_total_size = 0
     img_total_size = 0
     gps_total_size = 0
+    total_test_size = 0
 
-    for i in args.clients:
+    for i in [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]:
         random_key = equipment_list[int(i)]
         print("Client {} has {}".format(i, random_key))
         client_data_path = os.path.join(args.base_path, "Client_" + str(i))
@@ -159,6 +160,7 @@ def federated_train(
             random_key,
         )
         train_size = client_pipeline.load_data()
+        total_test_size += client_pipeline.get_test_size()
         common_total_size += train_size
         if "lidar" in random_key:
             lidar_total_size += train_size
@@ -197,6 +199,7 @@ def federated_train(
         # init metric counters
         top1 = AverageMeter()
         top1_infer = AverageMeter()
+        top1_global = AverageMeter()
 
         # init placeholders for global model aggregation
         model_common_curr_params = copy.deepcopy(model_common.state_dict())
@@ -228,7 +231,6 @@ def federated_train(
         cummulative_gps_mask = dict(
             [(name, 0) for name, param in gps_model_curr_params.items()]
         )
-
         # AvgFed counters (used only when args.use_tfed == False)
         for client in list_of_clients:
             client.update_model(
@@ -239,7 +241,12 @@ def federated_train(
             )
             print("Client {} is inferencing...".format(client.client_id))
             infer_prec1 = client.model_testing_on_local_data()
+            top1_global.update(infer_prec1, client.test_size / total_test_size)
             top1_infer.update(infer_prec1, 1)
+
+            if str(client.client_id) not in args.clients:
+                continue
+
             WRITER.add_scalar(
                 "Client_"
                 + str(client.client_id)
@@ -352,6 +359,7 @@ def federated_train(
         # log to tensorboard
         WRITER.add_scalar("AverageAccuracy", top1.avg, i + 1)
         WRITER.add_scalar("AverageInferenceAccuracy", top1_infer.avg, i + 1)
+        WRITER.add_scalar("GlobalModel/InferenceAccuracy", top1_global.avg, i + 1)
 
         if args.use_tfed:
             # aggregate global model parameters

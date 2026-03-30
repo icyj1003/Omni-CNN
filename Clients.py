@@ -295,10 +295,14 @@ class Client_pipeline:
             worker_init_fn=seed_worker,
         )
         print(self.train_size)
+        self.test_size = len(self.client_test_data)
         return self.train_size
 
     def get_train_size(self):
         return self.train_size
+
+    def get_test_size(self):
+        return self.test_size
 
     def set_transfer_learning(self):
         for name, W in self.model_common.named_parameters():

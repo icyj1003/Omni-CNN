@@ -609,7 +609,7 @@ if __name__ == "__main__":
     # model_common.load_state_dict(
     #     torch.load(common_save_path + "/last_{}{}.pt".format(args.arch, args.depth))
     # )
-    # cummu_model.load_state_dict(torch.load(args.load_cummu_model))
+    cummu_model.load_state_dict(torch.load(args.load_cummu_model))
     lidar_model = copy.deepcopy(cummu_model)
     img_model = copy.deepcopy(cummu_model)
     gps_model = copy.deepcopy(cummu_model)
