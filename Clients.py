@@ -363,14 +363,24 @@ class Client_pipeline:
                 ) / current_total_params
                 print(f"Exceed ratio: {exceed_ratio:.4f}")
 
+                def align_state_dict_to_model(state_dict, mask, model):
+                    aligned_state_dict = {}
+                    for name, param in model.named_parameters():
+                        if name in state_dict:
+                            aligned_state_dict[name] = state_dict[name] * mask[name]
+                    model.load_state_dict(aligned_state_dict)
+                    return model, mask
+
                 # prune the common model
                 common_state_dict = model_common.state_dict()
-                new_common_state_dict, model_common_mask = (
-                    one_shot_prune_to_param_limit(
-                        common_state_dict, model_common_mask, exceed_ratio
-                    )
+                model_common, model_common_mask = align_state_dict_to_model(
+                    *(
+                        one_shot_prune_to_param_limit(
+                            common_state_dict, model_common_mask, exceed_ratio
+                        )
+                    ),
+                    model_common,
                 )
-                model_common.load_state_dict(new_common_state_dict)
 
                 # prune the modal-specific models
                 for equipment in self.equipment:
@@ -379,33 +389,42 @@ class Client_pipeline:
                         and lidar_model is not None
                         and lidar_mask is not None
                     ):
-                        lidar_state_dict = lidar_model.state_dict()
-                        new_lidar_state_dict, lidar_mask = (
-                            one_shot_prune_to_param_limit(
-                                lidar_state_dict, lidar_mask, exceed_ratio
-                            )
+                        lidar_model, lidar_mask = align_state_dict_to_model(
+                            *(
+                                one_shot_prune_to_param_limit(
+                                    lidar_model.state_dict(),
+                                    lidar_mask,
+                                    exceed_ratio,
+                                )
+                            ),
+                            lidar_model,
                         )
-                        lidar_model.load_state_dict(new_lidar_state_dict)
                     elif (
                         equipment == "img"
                         and img_model is not None
                         and img_mask is not None
                     ):
-                        img_state_dict = img_model.state_dict()
-                        new_img_state_dict, img_mask = one_shot_prune_to_param_limit(
-                            img_state_dict, img_mask, exceed_ratio
+                        img_model, img_mask = align_state_dict_to_model(
+                            *(
+                                one_shot_prune_to_param_limit(
+                                    img_model.state_dict(), img_mask, exceed_ratio
+                                )
+                            ),
+                            img_model,
                         )
-                        img_model.load_state_dict(new_img_state_dict)
                     elif (
                         equipment == "gps"
                         and gps_model is not None
                         and gps_mask is not None
                     ):
-                        gps_state_dict = gps_model.state_dict()
-                        new_gps_state_dict, gps_mask = one_shot_prune_to_param_limit(
-                            gps_state_dict, gps_mask, exceed_ratio
+                        gps_model, gps_mask = align_state_dict_to_model(
+                            *(
+                                one_shot_prune_to_param_limit(
+                                    gps_model.state_dict(), gps_mask, exceed_ratio
+                                )
+                            ),
+                            gps_model,
                         )
-                        gps_model.load_state_dict(new_gps_state_dict)
 
                 # after pruning, compute the new total parameters
                 new_total_params = self.param_counts(

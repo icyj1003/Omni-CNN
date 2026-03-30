@@ -607,11 +607,11 @@ if __name__ == "__main__":
     Loading common model
     """
     common_save_path = os.path.join(args.save_path_exp, "task_common")
-    model_common.load_state_dict(
-        torch.load(common_save_path + "/last_{}{}.pt".format(args.arch, args.depth))
-    )
+    # model_common.load_state_dict(
+    #     torch.load(common_save_path + "/last_{}{}.pt".format(args.arch, args.depth))
+    # )
     print("*************** Testing ***************")
-    cummu_model.load_state_dict(torch.load(args.load_cummu_model))
+    # cummu_model.load_state_dict(torch.load(args.load_cummu_model))
     lidar_prec1 = pipeline.test_model(
         args,
         0,
@@ -621,7 +621,6 @@ if __name__ == "__main__":
         lidar_mask,
     )
     lidar_model = copy.deepcopy(cummu_model)
-    cummu_model.load_state_dict(torch.load(args.load_cummu_model))
     img_prec1 = pipeline.test_model(
         args,
         1,
@@ -631,7 +630,6 @@ if __name__ == "__main__":
         img_mask,
     )
     img_model = copy.deepcopy(cummu_model)
-    cummu_model.load_state_dict(torch.load(args.load_cummu_model))
     gps_prec1 = pipeline.test_model(
         args,
         2,
@@ -642,35 +640,6 @@ if __name__ == "__main__":
     )
     gps_model = copy.deepcopy(cummu_model)
 
-    """
-    # Train common model
-    # """
-    model_common = model_loader(
-        args, 0, common=True
-    )  # if args.adaptive_mask import from masknet otherwise models/flash_net
-    model_common.cuda()
-    # model_common.load_state_dict(
-    #     torch.load(common_save_path + "/last_{}{}.pt".format(args.arch, args.depth))
-    # )
-    ## Start loading individual retrained models
-    # lidar_save_path = os.path.join(args.save_path_exp, "task" + str(0))
-    # lidar_model.load_state_dict(
-    #     torch.load(
-    #         lidar_save_path + "/last_retrained_{}{}.pt".format(args.arch, args.depth)
-    #     )
-    # )
-    # img_save_path = os.path.join(args.save_path_exp, "task" + str(1))
-    # img_model.load_state_dict(
-    #     torch.load(
-    #         img_save_path + "/last_retrained_{}{}.pt".format(args.arch, args.depth)
-    #     )
-    # )
-    # gps_save_path = os.path.join(args.save_path_exp, "task" + str(2))
-    # gps_model.load_state_dict(
-    #     torch.load(
-    #         gps_save_path + "/last_retrained_{}{}.pt".format(args.arch, args.depth)
-    #     )
-    # )
     if id(cummu_model) == id(model_common):
         raise Exception("cummu_model and model_common are the same object")
 
