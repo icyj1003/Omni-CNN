@@ -436,7 +436,7 @@ class CVTrainValTest:
                 _mode_split = random.sample([0, 1, 2], mode_num)
             else:
                 mode_num = random.randint(1, len(mode_split))
-                _mode_split = random.sample(mode_split, mode_num, seed=args.seed)
+                _mode_split = random.sample(mode_split, mode_num)
                 # _mode_split = mode_split
             # print("mode_split", mode_split)
             specific_features = (
