@@ -167,14 +167,24 @@ def federated_train(
         if "gps" in random_key:
             gps_total_size += train_size
 
+        # client_pipeline.load_model(
+        #     model_common,
+        #     lidar_model,
+        #     lidar_mask,
+        #     img_model,
+        #     img_mask,
+        #     gps_model,
+        #     gps_mask,
+        #     size_limit_list[int(i)],
+        # )
         client_pipeline.load_model(
-            model_common,
-            lidar_model,
-            lidar_mask,
-            img_model,
-            img_mask,
-            gps_model,
-            gps_mask,
+            copy.deepcopy(model_common),
+            copy.deepcopy(lidar_model),
+            copy.deepcopy(lidar_mask),
+            copy.deepcopy(img_model),
+            copy.deepcopy(img_mask),
+            copy.deepcopy(gps_model),
+            copy.deepcopy(gps_mask),
             size_limit_list[int(i)],
         )
 

@@ -340,115 +340,147 @@ class Client_pipeline:
         gps_mask=None,
         size_limit_params=None,
     ):
-        # model_common_mask = dict(
-        #     [
-        #         (name, torch.ones_like(param))
-        #         for name, param in model_common.named_parameters()
-        #     ]
-        # )
-        # # compute number of non-zero parameters in the mask
-        # if size_limit_params is not None:
-        #     total_params = self.param_counts(
-        #         model_common, lidar_mask, img_mask, gps_mask
-        #     )
-        #     print(f"Total parameters in the model: {total_params}")
-
-        #     if False or total_params > size_limit_params:
-        #         print(
-        #             f"Total parameters {total_params} exceed the size limit {size_limit_params}. Pruning the model..."
-        #         )
-        #         # exceed ratio
-        #         exceed_ratio = (total_params - size_limit_params) / total_params
-        #         print(f"Exceed ratio: {exceed_ratio:.4f}")
-
-        #         model_list = [model_common, lidar_model, img_model, gps_model]
-        #         mask_list = [model_common_mask, lidar_mask, img_mask, gps_mask]
-
-        #         for idx, (model, mask) in enumerate(zip(model_list, mask_list)):
-        #             if mask is not None and model is not None:
-        #                 # prune the model by setting the smallest magnitude weights to zero
-        #                 new_state_dict, new_mask = one_shot_prune_to_param_limit(
-        #                     model.state_dict(),
-        #                     mask,
-        #                     exceed_ratio,
-        #                 )
-        #                 model_list[idx].load_state_dict(new_state_dict)
-        #                 mask_list[idx] = new_mask
-
-        #         pruned_lidar_mask = mask_list[1]
-        #         pruned_img_mask = mask_list[2]
-        #         pruned_gps_mask = mask_list[3]
-        #         pruned_model_common_mask = mask_list[0]
-
-        #         pruned_lidar_model = model_list[1]
-        #         pruned_img_model = model_list[2]
-        #         pruned_gps_model = model_list[3]
-        #         pruned_model_common = model_list[0]
-
-        #         # after pruning, compute the new total parameters
-        #         total_params = self.param_counts(
-        #             pruned_model_common,
-        #             pruned_lidar_mask,
-        #             pruned_img_mask,
-        #             pruned_gps_mask,
-        #         )
-        #         print(f"Total parameters after pruning: {total_params}")
-        #     else:
-        #         print(
-        #             f"Total parameters {total_params} are within the size limit {size_limit_params}. No pruning needed."
-        #         )
-
-        if "lidar" in self.equipment:
-            self.lidar_model = lidar_model
-            self.lidar_mask = lidar_mask
-            self.previous_lidar_mask = lidar_mask
-            self.transfer_lidar_mask = None
-        else:
-            self.lidar_model = None
-            self.lidar_mask = None
-            self.transfer_lidar_mask = None
-        if "img" in self.equipment:
-            self.img_model = img_model
-            self.img_mask = img_mask
-            self.previous_img_mask = img_mask
-            self.transfer_img_mask = None
-        else:
-            self.img_model = None
-            self.img_mask = None
-            self.transfer_img_mask = None
-        if "gps" in self.equipment:
-            self.gps_model = gps_model
-            self.gps_mask = gps_mask
-            self.previous_gps_mask = gps_mask
-            self.transfer_gps_mask = None
-        else:
-            self.gps_model = None
-            self.gps_mask = None
-            self.transfer_gps_mask = None
-        self.model_common = model_common
-        self.model_common_mask = dict(
+        model_common_mask = dict(
             [
                 (name, torch.ones_like(param))
                 for name, param in model_common.named_parameters()
             ]
         )
-        self.previous_common_mask = self.model_common_mask
-        self.transfer_model_common_mask = dict(
-            [
-                (
-                    (name, torch.zeros_like(param))
-                    if name not in self.transfer_layer
-                    else (name, torch.ones_like(param))
+        # compute number of non-zero parameters in the mask
+        if size_limit_params is not None:
+            current_total_params = self.param_counts(
+                model_common, lidar_mask, img_mask, gps_mask
+            )
+            print(f"Total parameters in the model: {current_total_params}")
+
+            if current_total_params > size_limit_params:
+                print(
+                    f"Total parameters {current_total_params} exceed the size limit {size_limit_params}. Pruning the model..."
                 )
-                for name, param in model_common.named_parameters()
-            ]
-        )
+                # exceed ratio
+                exceed_ratio = (
+                    current_total_params - size_limit_params
+                ) / current_total_params
+                print(f"Exceed ratio: {exceed_ratio:.4f}")
+
+                # prune the common model
+                common_state_dict = model_common.state_dict()
+                new_common_state_dict, model_common_mask = (
+                    one_shot_prune_to_param_limit(
+                        common_state_dict, model_common_mask, exceed_ratio
+                    )
+                )
+                model_common.load_state_dict(new_common_state_dict)
+
+                # prune the modal-specific models
+                for equipment in self.equipment:
+                    if (
+                        equipment == "lidar"
+                        and lidar_model is not None
+                        and lidar_mask is not None
+                    ):
+                        lidar_state_dict = lidar_model.state_dict()
+                        new_lidar_state_dict, lidar_mask = (
+                            one_shot_prune_to_param_limit(
+                                lidar_state_dict, lidar_mask, exceed_ratio
+                            )
+                        )
+                        lidar_model.load_state_dict(new_lidar_state_dict)
+                    elif (
+                        equipment == "img"
+                        and img_model is not None
+                        and img_mask is not None
+                    ):
+                        img_state_dict = img_model.state_dict()
+                        new_img_state_dict, img_mask = one_shot_prune_to_param_limit(
+                            img_state_dict, img_mask, exceed_ratio
+                        )
+                        img_model.load_state_dict(new_img_state_dict)
+                    elif (
+                        equipment == "gps"
+                        and gps_model is not None
+                        and gps_mask is not None
+                    ):
+                        gps_state_dict = gps_model.state_dict()
+                        new_gps_state_dict, gps_mask = one_shot_prune_to_param_limit(
+                            gps_state_dict, gps_mask, exceed_ratio
+                        )
+                        gps_model.load_state_dict(new_gps_state_dict)
+
+                # after pruning, compute the new total parameters
+                new_total_params = self.param_counts(
+                    model_common,
+                    lidar_mask,
+                    img_mask,
+                    gps_mask,
+                )
+                print(
+                    f"Total parameters after pruning: {new_total_params}, ratio pruned: {(1 - (new_total_params / current_total_params)):.4f}/{exceed_ratio:.4f}"
+                )
+            else:
+                print(
+                    f"Total parameters {current_total_params} are within the size limit {size_limit_params}. No pruning needed."
+                )
+
+            if "lidar" in self.equipment:
+                self.lidar_model = lidar_model
+                self.lidar_mask = lidar_mask
+                self.previous_lidar_mask = lidar_mask
+                self.transfer_lidar_mask = None
+            else:
+                self.lidar_model = None
+                self.lidar_mask = None
+                self.transfer_lidar_mask = None
+            if "img" in self.equipment:
+                self.img_model = img_model
+                self.img_mask = img_mask
+                self.previous_img_mask = img_mask
+                self.transfer_img_mask = None
+            else:
+                self.img_model = None
+                self.img_mask = None
+                self.transfer_img_mask = None
+            if "gps" in self.equipment:
+                self.gps_model = gps_model
+                self.gps_mask = gps_mask
+                self.previous_gps_mask = gps_mask
+                self.transfer_gps_mask = None
+            else:
+                self.gps_model = None
+                self.gps_mask = None
+                self.transfer_gps_mask = None
+            self.model_common = model_common
+            self.model_common_mask = model_common_mask
+            self.previous_common_mask = self.model_common_mask
+            self.transfer_model_common_mask = dict(
+                [
+                    (
+                        (name, torch.zeros_like(param))
+                        if name not in self.transfer_layer
+                        else (name, self.model_common_mask[name])
+                    )
+                    for name, param in model_common.named_parameters()
+                ]
+            )
 
     def param_counts(self, model_common, lidar_mask, img_mask, gps_mask):
-        total_params = sum([v.numel() for v in model_common.state_dict().values()])
-        for mask in [lidar_mask, img_mask, gps_mask]:
-            if mask is not None:
-                total_params += sum([v.sum().item() for v in mask.values()])
+        total_params = torch.count_nonzero(
+            torch.cat([torch.flatten(param) for param in model_common.parameters()])
+        )
+        for equipment in self.equipment:
+            if equipment == "lidar" and lidar_mask is not None:
+                total_params += torch.count_nonzero(
+                    torch.cat([torch.flatten(m) for m in lidar_mask.values()])
+                )
+            if equipment == "img" and img_mask is not None:
+                total_params += torch.count_nonzero(
+                    torch.cat([torch.flatten(m) for m in img_mask.values()])
+                )
+            if equipment == "gps" and gps_mask is not None:
+                total_params += torch.count_nonzero(
+                    torch.cat([torch.flatten(m) for m in gps_mask.values()])
+                )
+
         return total_params
 
     def save_model(self):
