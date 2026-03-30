@@ -242,7 +242,9 @@ def federated_train(
             # update client status based on inference accuracy
             if i == 0:
                 client.update_previous_accuracy(infer_prec1)
-            if evaluate_accuracy(args, client, infer_prec1):
+
+            # set transfer learning or retraining based on accuracy evaluation
+            if evaluate_accuracy(args, client, infer_prec1) and args.use_tfed:
                 client.set_transfer_learning()
                 print("Client {} is transferring...".format(client.client_id))
             else:
@@ -291,7 +293,10 @@ def federated_train(
                     cummulative_common_mask[name] += common_weights
                 else:
                     model_common_new_params[name] += (
-                        param * _common_mask[name].cuda() * client.get_train_size()
+                        param
+                        * _common_mask[name].cuda()
+                        * client.get_train_size()
+                        / max(common_total_size, 1)
                     )
 
             if _lidar_mask is not None:
@@ -307,7 +312,10 @@ def federated_train(
                         cummulative_lidar_mask[name] += lidar_weights
                     else:
                         lidar_model_new_params[name] += (
-                            param * _lidar_mask[name].cuda() * client.get_train_size()
+                            param
+                            * _lidar_mask[name].cuda()
+                            * client.get_train_size()
+                            / max(lidar_total_size, 1)
                         )
 
             if _img_mask is not None:
@@ -323,7 +331,10 @@ def federated_train(
                         cummulative_img_mask[name] += img_weights
                     else:
                         img_model_new_params[name] += (
-                            param * _img_mask[name].cuda() * client.get_train_size()
+                            param
+                            * _img_mask[name].cuda()
+                            * client.get_train_size()
+                            / max(img_total_size, 1)
                         )
 
             if _gps_mask is not None:
@@ -339,7 +350,10 @@ def federated_train(
                         cummulative_gps_mask[name] += gps_weights
                     else:
                         gps_model_new_params[name] += (
-                            param * _gps_mask[name].cuda() * client.get_train_size()
+                            param
+                            * _gps_mask[name].cuda()
+                            * client.get_train_size()
+                            / max(gps_total_size, 1)
                         )
 
             # client log here
@@ -396,16 +410,6 @@ def federated_train(
                 except Exception:
                     print(f"Checking gps model param: {param} so not updating")
                     gps_model_new_params[name] = gps_model_curr_params[name]
-        else:
-            # plain AvgFed (equal weight per client)
-            for name, param in model_common_new_params.items():
-                model_common_new_params[name] = param / max(common_total_size, 1)
-            for name, param in lidar_model_new_params.items():
-                lidar_model_new_params[name] = param / max(lidar_total_size, 1)
-            for name, param in img_model_new_params.items():
-                img_model_new_params[name] = param / max(img_total_size, 1)
-            for name, param in gps_model_new_params.items():
-                gps_model_new_params[name] = param / max(gps_total_size, 1)
 
         print("Server is updating...")
 
@@ -414,16 +418,16 @@ def federated_train(
         img_model.load_state_dict(img_model_new_params)
         gps_model.load_state_dict(gps_model_new_params)
 
-        prec_all = pipeline.validate_model(
-            args,
-            lidar_model,
-            img_model,
-            gps_model,
-            model_common,
-            test_common_loader,
-            [0, 1, 2],
-        )
-        WRITER.add_scalar("GlobalModel/Accuracy", prec_all, i + 1)
+        # prec_all = pipeline.validate_model(
+        #     args,
+        #     lidar_model,
+        #     img_model,
+        #     gps_model,
+        #     model_common,
+        #     test_common_loader,
+        #     [0, 1, 2],
+        # )
+        # WRITER.add_scalar("GlobalModel/Accuracy", prec_all, i + 1)
 
     for client in list_of_clients:
         client.save_model()

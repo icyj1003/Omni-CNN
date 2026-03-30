@@ -19,7 +19,7 @@
                 "--save_path",
                 "experiments/LIG_S1",
                 "--load-cummu-model",
-                "centralized/LIG_S1/flash/task2/cumu_model.pt",
+                "experiments/LIG_S1/flash/task2/cumu_model.pt",
                 "--classes",
                 "64",
                 "--epochs",
