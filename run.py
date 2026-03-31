@@ -57,22 +57,23 @@ base_cmd = [
 
 client_settings = [
     [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
-    # [0, 1, 2, 3, 4, 5, 6, 7],
-    # [0, 1, 3, 4, 5, 7],
-    # [0, 3, 4, 7],
-    # [0, 3],
+    [0, 1, 2, 3, 4, 5, 6, 7],
+    [0, 1, 3, 4, 5, 7],
+    [0, 3, 4, 7],
+    [0, 3],
 ]
 
 # scaling experiments
-for clients in client_settings:
-    for use_tfed in [True]:
-        cmd = base_cmd + ["--clients", *map(str, clients)]
-        if use_tfed:
-            cmd.append("--use_tfed")
-        env = os.environ.copy()
-        env["CUDA_VISIBLE_DEVICES"] = gpu
-        print("Running:", " ".join(cmd))
-        subprocess.run(cmd, check=True, env=env)
+if args.run_scaling:
+    for clients in client_settings:
+        for use_tfed in [True]:
+            cmd = base_cmd + ["--clients", *map(str, clients)]
+            if use_tfed:
+                cmd.append("--use_tfed")
+            env = os.environ.copy()
+            env["CUDA_VISIBLE_DEVICES"] = gpu
+            print("Running:", " ".join(cmd))
+            subprocess.run(cmd, check=True, env=env)
 
 # For heterogeneous experiments, you can modify the client_settings and the base_cmd accordingly.
 heterogeneous_settings = [0, 1, 2, 3]

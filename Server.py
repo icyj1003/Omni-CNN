@@ -16,21 +16,21 @@ random.seed(seed)
 # img_lidar_accuracy_threshold = 87
 # gps_img_lidar_accuracy_threshold = 84
 
-gps_accuracy_threshold = 28
-img_accuracy_threshold = 72
-lidar_accuracy_threshold = 80
-gps_img_accuracy_threshold = 68
-gps_lidar_accuracy_threshold = 76
-img_lidar_accuracy_threshold = 80
-gps_img_lidar_accuracy_threshold = 80
-
-# gps_accuracy_threshold = 29.3
-# img_accuracy_threshold = 71
-# lidar_accuracy_threshold = 85
+# gps_accuracy_threshold = 28
+# img_accuracy_threshold = 72
+# lidar_accuracy_threshold = 80
 # gps_img_accuracy_threshold = 68
-# gps_lidar_accuracy_threshold = 85
-# img_lidar_accuracy_threshold = 87
-# gps_img_lidar_accuracy_threshold = 88
+# gps_lidar_accuracy_threshold = 76
+# img_lidar_accuracy_threshold = 80
+# gps_img_lidar_accuracy_threshold = 80
+
+gps_accuracy_threshold = 29.3
+img_accuracy_threshold = 71
+lidar_accuracy_threshold = 85
+gps_img_accuracy_threshold = 68
+gps_lidar_accuracy_threshold = 85
+img_lidar_accuracy_threshold = 87
+gps_img_lidar_accuracy_threshold = 88
 
 
 def sigmoid_with_zero_handling(tensor):
