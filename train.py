@@ -275,7 +275,8 @@ args = parser.parse_args()
 
 name = "{}_clients_{}_tfed".format(len(args.clients), args.use_tfed)
 date_time = time.strftime("%Y-%m-%d-%H-%M-%S", time.localtime())
-name = name + "_" + date_time
+heterogeneous_setting = ["mixed", "single", "dual", "full"]
+name = name + "_" + date_time + "_" + heterogeneous_setting[args.heterogeneous]
 WRITER = SummaryWriter(log_dir=os.path.join("./runs/", name))
 
 args.name = name

@@ -85,15 +85,16 @@ if args.run_scaling:
 heterogeneous_settings = [0, 1, 2, 3]
 if args.run_heterogeneous:
     for heto in heterogeneous_settings:
-        cmd = base_cmd + ["--heterogeneous", str(heto)]
-        # cmd = cmd + [
-        #     "--comms-round",
-        #     "5",
-        # ]  # You can adjust the number of communication rounds as needed
-        cmd = cmd + ["--remove_size_limit"]
-        if args.use_tfed:
-            cmd.append("--use_tfed")
-        env = os.environ.copy()
-        env["CUDA_VISIBLE_DEVICES"] = gpu
-        print("Running:", " ".join(cmd))
-        subprocess.run(cmd, check=True, env=env)
+        for use_tfed in [False, True]:
+            cmd = base_cmd + ["--heterogeneous", str(heto)]
+            # cmd = cmd + [
+            #     "--comms-round",
+            #     "5",
+            # ]  # You can adjust the number of communication rounds as needed
+            cmd = cmd + ["--remove_size_limit"]
+            if use_tfed:
+                cmd.append("--use_tfed")
+            env = os.environ.copy()
+            env["CUDA_VISIBLE_DEVICES"] = gpu
+            print("Running:", " ".join(cmd))
+            subprocess.run(cmd, check=True, env=env)
