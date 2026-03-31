@@ -57,15 +57,15 @@ base_cmd = [
 
 client_settings = [
     [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
-    [0, 1, 2, 3, 4, 5, 6, 7],
-    [0, 1, 3, 4, 5, 7],
-    [0, 3, 4, 7],
-    [0, 3],
+    # [0, 1, 2, 3, 4, 5, 6, 7],
+    # [0, 1, 3, 4, 5, 7],
+    # [0, 3, 4, 7],
+    # [0, 3],
 ]
 
 # scaling experiments
 for clients in client_settings:
-    for use_tfed in [False]:
+    for use_tfed in [True]:
         cmd = base_cmd + ["--clients", *map(str, clients)]
         if use_tfed:
             cmd.append("--use_tfed")
