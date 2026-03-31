@@ -65,7 +65,7 @@ client_settings = [
 
 # scaling experiments
 for clients in client_settings:
-    for use_tfed in [True, False]:
+    for use_tfed in [False]:
         cmd = base_cmd + ["--clients", *map(str, clients)]
         if use_tfed:
             cmd.append("--use_tfed")
@@ -77,7 +77,7 @@ for clients in client_settings:
 # For heterogeneous experiments, you can modify the client_settings and the base_cmd accordingly.
 heterogeneous_settings = [0, 1, 2, 3]
 if args.run_heterogeneous:
-    for use_tfed in [True, False]:
+    for use_tfed in [False]:
         for heto in heterogeneous_settings:
             cmd = base_cmd + ["--heterogeneous", str(heto)]
             # cmd = cmd + [

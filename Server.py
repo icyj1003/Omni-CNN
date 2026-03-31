@@ -24,6 +24,14 @@ gps_lidar_accuracy_threshold = 76
 img_lidar_accuracy_threshold = 80
 gps_img_lidar_accuracy_threshold = 80
 
+# gps_accuracy_threshold = 29.3
+# img_accuracy_threshold = 71
+# lidar_accuracy_threshold = 85
+# gps_img_accuracy_threshold = 68
+# gps_lidar_accuracy_threshold = 85
+# img_lidar_accuracy_threshold = 87
+# gps_img_lidar_accuracy_threshold = 88
+
 
 def sigmoid_with_zero_handling(tensor):
     """
@@ -199,13 +207,15 @@ def federated_train(
         )
         train_size = client_pipeline.load_data()
         total_test_size += client_pipeline.get_test_size()
-        common_total_size += train_size
-        if "lidar" in random_key:
-            lidar_total_size += train_size
-        if "img" in random_key:
-            img_total_size += train_size
-        if "gps" in random_key:
-            gps_total_size += train_size
+
+        if str(i) in args.clients:
+            common_total_size += train_size
+            if "lidar" in random_key:
+                lidar_total_size += train_size
+            if "img" in random_key:
+                img_total_size += train_size
+            if "gps" in random_key:
+                gps_total_size += train_size
 
         # client_pipeline.load_model(
         #     model_common,
@@ -360,7 +370,7 @@ def federated_train(
                         # * client.get_train_size()
                     )
                 else:
-                    common_weights = _common_mask[name].cuda() / len(args.clients)
+                    common_weights = client.get_train_size() / common_total_size
 
                 model_common_new_params[name] += param * common_weights
                 cummulative_common_mask[name] += common_weights
@@ -374,7 +384,7 @@ def federated_train(
                             # * client.get_train_size()
                         )
                     else:
-                        lidar_weights = _lidar_mask[name].cuda() / len(args.clients)
+                        lidar_weights = client.get_train_size() / lidar_total_size
                     lidar_model_new_params[name] += param * lidar_weights
                     cummulative_lidar_mask[name] += lidar_weights
 
@@ -387,7 +397,7 @@ def federated_train(
                             # * client.get_train_size()
                         )
                     else:
-                        img_weights = _img_mask[name].cuda() / len(args.clients)
+                        img_weights = client.get_train_size() / img_total_size
                     img_model_new_params[name] += param * img_weights
                     cummulative_img_mask[name] += img_weights
 
@@ -400,7 +410,7 @@ def federated_train(
                             # * client.get_train_size()
                         )
                     else:
-                        gps_weights = _gps_mask[name].cuda() / len(args.clients)
+                        gps_weights = client.get_train_size() / gps_total_size
                     gps_model_new_params[name] += param * gps_weights
                     cummulative_gps_mask[name] += gps_weights
             # client log here
