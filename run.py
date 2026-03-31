@@ -14,6 +14,13 @@ argument_parser.add_argument(
     action="store_true",
     help="Whether to run scaling experiments (default: False)",
 )
+
+argument_parser.add_argument(
+    "--use-tfed",
+    action="store_true",
+    help="Whether to use federated learning (default: False)",
+)
+
 args = argument_parser.parse_args()
 
 gpu = os.environ.get("CUDA_VISIBLE_DEVICES", "0")
@@ -66,29 +73,27 @@ client_settings = [
 # scaling experiments
 if args.run_scaling:
     for clients in client_settings:
-        for use_tfed in [True]:
-            cmd = base_cmd + ["--clients", *map(str, clients)]
-            if use_tfed:
-                cmd.append("--use_tfed")
-            env = os.environ.copy()
-            env["CUDA_VISIBLE_DEVICES"] = gpu
-            print("Running:", " ".join(cmd))
-            subprocess.run(cmd, check=True, env=env)
+        cmd = base_cmd + ["--clients", *map(str, clients)]
+        if args.use_tfed:
+            cmd.append("--use_tfed")
+        env = os.environ.copy()
+        env["CUDA_VISIBLE_DEVICES"] = gpu
+        print("Running:", " ".join(cmd))
+        subprocess.run(cmd, check=True, env=env)
 
 # For heterogeneous experiments, you can modify the client_settings and the base_cmd accordingly.
 heterogeneous_settings = [0, 1, 2, 3]
 if args.run_heterogeneous:
-    for use_tfed in [False]:
-        for heto in heterogeneous_settings:
-            cmd = base_cmd + ["--heterogeneous", str(heto)]
-            # cmd = cmd + [
-            #     "--comms-round",
-            #     "5",
-            # ]  # You can adjust the number of communication rounds as needed
-            cmd = cmd + ["--remove_size_limit"]
-            if use_tfed:
-                cmd.append("--use_tfed")
-            env = os.environ.copy()
-            env["CUDA_VISIBLE_DEVICES"] = gpu
-            print("Running:", " ".join(cmd))
-            subprocess.run(cmd, check=True, env=env)
+    for heto in heterogeneous_settings:
+        cmd = base_cmd + ["--heterogeneous", str(heto)]
+        # cmd = cmd + [
+        #     "--comms-round",
+        #     "5",
+        # ]  # You can adjust the number of communication rounds as needed
+        cmd = cmd + ["--remove_size_limit"]
+        if args.use_tfed:
+            cmd.append("--use_tfed")
+        env = os.environ.copy()
+        env["CUDA_VISIBLE_DEVICES"] = gpu
+        print("Running:", " ".join(cmd))
+        subprocess.run(cmd, check=True, env=env)
