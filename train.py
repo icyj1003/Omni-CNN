@@ -42,6 +42,15 @@ def check_and_create(dir_path):
 # Training settings
 parser = argparse.ArgumentParser(description="PyTorch CIFAR10 Training")
 parser.add_argument(
+    "--heterogeneous", type=int, default=0, help="0:mixed, 1:single, 2:dual, 3: full"
+)
+parser.add_argument(
+    "--remove_size_limit",
+    action="store_true",
+    default=False,
+    help="whether to set size limit for clients",
+)
+parser.add_argument(
     "--logger", action="store_true", default=True, help="whether to use logger"
 )
 parser.add_argument(

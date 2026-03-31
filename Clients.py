@@ -534,78 +534,38 @@ class Client_pipeline:
             return self.model_common_mask
 
     def update_model(self, model_common_params, lidar_params, img_params, gps_params):
-        temp_path = self.client_save_path
-        try:
-            self.model_common.load_state_dict(
-                torch.load(
-                    os.path.join(temp_path, "model_common.pth"), weights_only=True
+
+        for name, W in self.model_common.named_parameters():
+            with torch.no_grad():
+                W[self.previous_common_mask[name].type(torch.bool)] = (
+                    model_common_params[name][
+                        self.previous_common_mask[name].type(torch.bool)
+                    ]
                 )
-            )
-            for name, W in self.model_common.named_parameters():
-                with torch.no_grad():
-                    W[self.previous_common_mask[name].type(torch.bool)] = (
-                        model_common_params[name][
-                            self.previous_common_mask[name].type(torch.bool)
-                        ]
-                    )
-        except Exception:
-            print("Model common not found")
-            self.model_common.load_state_dict(model_common_params)
 
         if "lidar" in self.equipment:
-            try:
-                self.lidar_model.load_state_dict(
-                    torch.load(
-                        os.path.join(temp_path, "lidar_model.pth"), weights_only=True
-                    )
-                )
-                if self.previous_lidar_mask is not None:
-                    for name, W in self.lidar_model.named_parameters():
-                        with torch.no_grad():
-                            W[self.previous_lidar_mask[name].type(torch.bool)] = (
-                                lidar_params[name][
-                                    self.previous_lidar_mask[name].type(torch.bool)
-                                ]
-                            )
-            except Exception:
-                print("Lidar model not found")
-                self.lidar_model.load_state_dict(lidar_params)
+            if self.previous_lidar_mask is not None:
+                for name, W in self.lidar_model.named_parameters():
+                    with torch.no_grad():
+                        W[self.previous_lidar_mask[name].type(torch.bool)] = (
+                            lidar_params[name][
+                                self.previous_lidar_mask[name].type(torch.bool)
+                            ]
+                        )
         if "img" in self.equipment:
-            try:
-                self.img_model.load_state_dict(
-                    torch.load(
-                        os.path.join(temp_path, "img_model.pth"), weights_only=True
-                    )
-                )
-                if self.previous_img_mask is not None:
-                    for name, W in self.img_model.named_parameters():
-                        with torch.no_grad():
-                            W[self.previous_img_mask[name].type(torch.bool)] = (
-                                img_params[name][
-                                    self.previous_img_mask[name].type(torch.bool)
-                                ]
-                            )
-            except Exception:
-                print("Img model not found")
-                self.img_model.load_state_dict(img_params)
+            if self.previous_img_mask is not None:
+                for name, W in self.img_model.named_parameters():
+                    with torch.no_grad():
+                        W[self.previous_img_mask[name].type(torch.bool)] = img_params[
+                            name
+                        ][self.previous_img_mask[name].type(torch.bool)]
         if "gps" in self.equipment:
-            try:
-                self.gps_model.load_state_dict(
-                    torch.load(
-                        os.path.join(temp_path, "gps_model.pth"), weights_only=True
-                    )
-                )
-                if self.previous_gps_mask is not None:
-                    for name, W in self.gps_model.named_parameters():
-                        with torch.no_grad():
-                            W[self.previous_gps_mask[name].type(torch.bool)] = (
-                                gps_params[name][
-                                    self.previous_gps_mask[name].type(torch.bool)
-                                ]
-                            )
-            except Exception:
-                print("GPS model not found")
-                self.gps_model.load_state_dict(gps_params)
+            if self.previous_gps_mask is not None:
+                for name, W in self.gps_model.named_parameters():
+                    with torch.no_grad():
+                        W[self.previous_gps_mask[name].type(torch.bool)] = gps_params[
+                            name
+                        ][self.previous_gps_mask[name].type(torch.bool)]
 
     def configure_optimizer(self):
         compined_params = list(self.model_common.parameters())

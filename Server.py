@@ -14,15 +14,15 @@ random.seed(seed)
 # gps_img_accuracy_threshold = 68
 # gps_lidar_accuracy_threshold = 85
 # img_lidar_accuracy_threshold = 87
-# gps_img_lidar_accuracy_threshold = 88
+# gps_img_lidar_accuracy_threshold = 84
 
-gps_accuracy_threshold = 100
-img_accuracy_threshold = 100
-lidar_accuracy_threshold = 100
-gps_img_accuracy_threshold = 100
-gps_lidar_accuracy_threshold = 100
-img_lidar_accuracy_threshold = 100
-gps_img_lidar_accuracy_threshold = 100
+gps_accuracy_threshold = 28
+img_accuracy_threshold = 72
+lidar_accuracy_threshold = 80
+gps_img_accuracy_threshold = 68
+gps_lidar_accuracy_threshold = 76
+img_lidar_accuracy_threshold = 80
+gps_img_lidar_accuracy_threshold = 80
 
 
 def sigmoid_with_zero_handling(tensor):
@@ -123,7 +123,7 @@ def federated_train(
     test_common_loader,
 ):
     # clients sensor configuration
-    equipment_list = [
+    equipment_list_mixed = [
         ["lidar", "img", "gps"],
         ["lidar"],
         ["img"],
@@ -135,11 +135,39 @@ def federated_train(
         ["lidar", "img"],
         ["lidar", "gps"],
     ]
+    equipment_list_full = [["lidar", "img", "gps"] for _ in range(10)]
+    equipment_list_single = [
+        ["lidar"],
+        ["img"],
+        ["gps"],
+        ["lidar"],
+        ["img"],
+        ["gps"],
+        ["lidar"],
+        ["img"],
+        ["gps"],
+        ["lidar"],
+    ]
+    equipment_list_dual = [
+        ["lidar", "img"],
+        ["lidar", "gps"],
+        ["img", "gps"],
+        ["lidar", "img"],
+        ["lidar", "gps"],
+        ["img", "gps"],
+        ["lidar", "img"],
+        ["lidar", "gps"],
+        ["img", "gps"],
+        ["lidar", "img"],
+    ]
 
     # clients model storage size limit
-    size_limit_list = [
-        x * 1e6 for x in [3.4, 2.2, 2.5, 2.0, 3.1, 2.6, 2.9, 2.4, 2.1, 1.9]
-    ]
+    if args.remove_size_limit:
+        size_limit_list = [1e9 for _ in range(10)]
+    else:
+        size_limit_list = [
+            x * 1e6 for x in [3.4, 2.2, 2.5, 2.0, 3.1, 2.6, 2.9, 2.4, 2.1, 1.9]
+        ]
     list_of_clients = []
     common_total_size = 0
     lidar_total_size = 0
@@ -148,7 +176,17 @@ def federated_train(
     total_test_size = 0
 
     for i in [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]:
-        random_key = equipment_list[int(i)]
+        if args.heterogeneous == 0:
+            random_key = equipment_list_mixed[int(i)]
+        elif args.heterogeneous == 1:
+            random_key = equipment_list_single[int(i)]
+        elif args.heterogeneous == 2:
+            random_key = equipment_list_dual[int(i)]
+        elif args.heterogeneous == 3:
+            random_key = equipment_list_full[int(i)]
+        else:
+            raise ValueError("Invalid heterogeneous setting")
+
         print("Client {} has {}".format(i, random_key))
         client_data_path = os.path.join(args.base_path, "Client_" + str(i))
         client_save_path = os.path.join(args.save_path, args.name, "Client_" + str(i))
@@ -242,11 +280,11 @@ def federated_train(
             print("Client {} is inferencing...".format(client.client_id))
             infer_prec1 = client.model_testing_on_local_data()
             top1_global.update(infer_prec1, client.test_size / total_test_size)
-            top1_infer.update(infer_prec1, 1)
 
             if str(client.client_id) not in args.clients:
                 continue
 
+            top1_infer.update(infer_prec1, 1)
             WRITER.add_scalar(
                 "Client_"
                 + str(client.client_id)
@@ -264,9 +302,25 @@ def federated_train(
             if evaluate_accuracy(args, client, infer_prec1) and args.use_tfed:
                 client.set_transfer_learning()
                 print("Client {} is transferring...".format(client.client_id))
+                WRITER.add_scalar(
+                    "Client_"
+                    + str(client.client_id)
+                    + "/Status_"
+                    + "_".join(client.equipment),
+                    1,
+                    i,
+                )
             else:
                 client.set_relearning()
                 print("Client {} is retraining...".format(client.client_id))
+                WRITER.add_scalar(
+                    "Client_"
+                    + str(client.client_id)
+                    + "/Status_"
+                    + "_".join(client.equipment),
+                    0,
+                    i,
+                )
 
             _common_mask = client.get_mask("common")
             _lidar_mask = client.get_mask("lidar")
@@ -306,7 +360,7 @@ def federated_train(
                         # * client.get_train_size()
                     )
                 else:
-                    common_weights = _common_mask[name].cuda() * client.get_train_size()
+                    common_weights = _common_mask[name].cuda() / len(args.clients)
 
                 model_common_new_params[name] += param * common_weights
                 cummulative_common_mask[name] += common_weights
@@ -320,9 +374,7 @@ def federated_train(
                             # * client.get_train_size()
                         )
                     else:
-                        lidar_weights = (
-                            _lidar_mask[name].cuda() * client.get_train_size()
-                        )
+                        lidar_weights = _lidar_mask[name].cuda() / len(args.clients)
                     lidar_model_new_params[name] += param * lidar_weights
                     cummulative_lidar_mask[name] += lidar_weights
 
@@ -335,7 +387,7 @@ def federated_train(
                             # * client.get_train_size()
                         )
                     else:
-                        img_weights = _img_mask[name].cuda() * client.get_train_size()
+                        img_weights = _img_mask[name].cuda() / len(args.clients)
                     img_model_new_params[name] += param * img_weights
                     cummulative_img_mask[name] += img_weights
 
@@ -348,7 +400,7 @@ def federated_train(
                             # * client.get_train_size()
                         )
                     else:
-                        gps_weights = _gps_mask[name].cuda() * client.get_train_size()
+                        gps_weights = _gps_mask[name].cuda() / len(args.clients)
                     gps_model_new_params[name] += param * gps_weights
                     cummulative_gps_mask[name] += gps_weights
             # client log here
@@ -361,12 +413,21 @@ def federated_train(
         WRITER.add_scalar("AverageInferenceAccuracy", top1_infer.avg, i + 1)
         WRITER.add_scalar("GlobalModel/InferenceAccuracy", top1_global.avg, i + 1)
 
+        # aggregate global model parameters
         if args.use_tfed:
-            # aggregate global model parameters
             for name, param in model_common_new_params.items():
-                model_common_new_params[name] = safe_elementwise_division(
-                    param, cummulative_common_mask[name]
-                )
+                try:
+                    if torch.sum(param) != 0:
+                        print("updating common model")
+                        model_common_new_params[name] = safe_elementwise_division(
+                            param, cummulative_common_mask[name]
+                        )
+                    else:
+                        print("not updating common model")
+                        model_common_new_params[name] = model_common_curr_params[name]
+                except Exception:
+                    print(f"Checking common model param: {param} so not updating")
+                    model_common_new_params[name] = model_common_curr_params[name]
             for name, param in lidar_model_new_params.items():
                 try:
                     if torch.sum(param) != 0:
