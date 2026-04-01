@@ -6,3 +6,4 @@ runs/*
 results/*
 env
 *__pycache__/*
+*.pdf
